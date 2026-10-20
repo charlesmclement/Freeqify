@@ -1,0 +1,20 @@
+// Curated launch pack; the selected ID is saved, never re-randomized by the browser.
+export const artworkPresets = [
+  'generic_01_sunset_ridge.jpg',
+  'generic_02_smoke_portrait.jpg',
+  'generic_03_shoreline_tide.jpg',
+  'generic_04_neon_halo.jpg',
+  'generic_05_lunar_eclipse.jpg',
+  'generic_06_morning_leaves.jpg',
+  'generic_07_vinyl_warmth.jpg',
+  'generic_08_iridescent_silk.jpg',
+  'generic_09_rainy_metropolis.jpg',
+  'generic_10_peach_clouds.jpg',
+  'generic_11_moonlit_doorway.jpg',
+  'generic_12_dune_waves.jpg',
+  'generic_13_night_garden.jpg',
+  'generic_14_alpine_light.jpg',
+  'generic_15_deep_water.jpg',
+  'generic_16_cosmic_bloom.jpg',
+  'generic_17_prism_orb.jpg',
+] as const;

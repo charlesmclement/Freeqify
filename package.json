@@ -1,0 +1,57 @@
+{
+  "name": "freeqify",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "GPL-3.0-only",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11"
+  },
+  "scripts": {
+    "dev": "npm run build -w @freeqify/shared && tsx watch apps/server/src/index.ts",
+    "build": "npm run build -w @freeqify/shared && npm run build -w @freeqify/web && npm run build -w @freeqify/server",
+    "start": "node scripts/start.mjs",
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "npm run build -w @freeqify/shared && npm run typecheck --workspaces --if-present",
+    "test": "npm run build -w @freeqify/shared && vitest run",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
+    "navidrome:start": "node scripts/navidrome.mjs",
+    "test:integration": "node scripts/smoke-auth.mjs",
+    "navidrome:install": "node scripts/install-navidrome.mjs",
+    "admin:create": "node apps/server/dist/admin-cli.js",
+    "test:playback": "node scripts/smoke-playback.mjs",
+    "test:personal": "node scripts/smoke-personal.mjs",
+    "test:capacity": "node scripts/smoke-capacity.mjs",
+    "admin:recover": "node apps/server/dist/recovery-cli.js",
+    "test:security": "node scripts/smoke-security.mjs",
+    "install:prepare": "node scripts/setup.mjs",
+    "maintenance": "node scripts/maintenance.mjs",
+    "test:proxy": "node scripts/smoke-proxy.mjs",
+    "install:doctor": "node scripts/doctor.mjs",
+    "test:sandbox": "node scripts/smoke-sandbox.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@types/node": "^24.10.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "eslint": "^10.0.0",
+    "eslint-plugin-react-hooks": "^7.0.0",
+    "globals": "^16.5.0",
+    "jsdom": "^27.1.0",
+    "tsx": "^4.20.6",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.46.0",
+    "vitest": "^4.0.0"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3"
+  }
+}

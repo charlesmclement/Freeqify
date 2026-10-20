@@ -1,0 +1,5 @@
+import { expect,it } from 'vitest';
+import { ListeningAttempt } from './listening.js';
+import { listeningThreshold } from '@freeqify/shared';
+it('counts forward playback and rejects seeking, paused time, restoration and rerender samples',()=>{const a=new ListeningAttempt();a.sample(40,0,false);a.sample(40,1000,true);a.sample(41,2000,true);expect(a.listened).toBe(1);a.sample(80,2100,true);expect(a.listened).toBe(1);a.sample(81,3100,true);expect(a.listened).toBe(2);a.sample(81,3100,true);a.sample(81,100000,false);a.sample(81,200000,true);expect(a.listened).toBe(2);});
+it('uses half of short songs or 30 seconds, and throttles progress updates by event',()=>{expect(listeningThreshold(10)).toBe(5);expect(listeningThreshold(200)).toBe(30);expect(listeningThreshold(null)).toBe(30);const a=new ListeningAttempt();for(let i=0;i<=30;i++)a.sample(i,i*1000,true);expect(a.shouldSend(200)).toBe(true);a.sent();expect(a.shouldSend(200)).toBe(false);for(let i=31;i<=45;i++)a.sample(i,i*1000,true);expect(a.shouldSend(200)).toBe(true);expect(new ListeningAttempt().eventId).not.toBe(a.eventId);});

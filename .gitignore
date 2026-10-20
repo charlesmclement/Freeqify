@@ -1,0 +1,27 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+data/
+*.db
+*.db-*
+*.sqlite*
+*.log
+.DS_Store
+
+# Private configuration and credential exports (examples remain trackable).
+*.env
+*.env.*
+!.env.example
+secrets/
+credentials/
+private/
+tokens/
+*.pem
+*.key
+*.cookie
+*.cookies
+*-password
+smoke-cookie

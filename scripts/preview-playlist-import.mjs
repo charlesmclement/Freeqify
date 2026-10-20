@@ -1,0 +1,22 @@
+/** Disposable, loopback-only review fixture. Never reads operator config or music. */
+import {mkdtemp,writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {readConfig} from '../apps/server/dist/config.js';
+import {AuthStore} from '../apps/server/dist/auth/store.js';
+import {createApp} from '../apps/server/dist/app.js';
+import {ImportStore} from '../apps/server/dist/import-store.js';
+import {parsePlaylistCsv} from '../apps/server/dist/import-csv.js';
+import {matchImported} from '../apps/server/dist/import-matching.js';
+import {emptyPlayback} from '../packages/shared/dist/index.js';
+const dir=await mkdtemp(join(tmpdir(),'freeqify-import-preview-'));const config=readConfig({NODE_ENV:'test',AUTH_SECURE_COOKIES:'false',HOST:'127.0.0.1',DATA_DIR:dir,BASE_PATH:'/'});
+const auth=new AuthStore(join(dir,'preview.sqlite'),config.auth);const user=await auth.createInitialAdmin('preview-owner','local-only generated preview account');
+const fixtures=[['Halcyon + On + On','Orbital','Hackers Original Soundtrack'],['Cowgirl','Underworld','Hackers Original Soundtrack'],['Voodoo People','The Prodigy','Hackers Original Soundtrack'],['Open Up','Leftfield','Leftism'],['Little Fluffy Clouds','The Orb','The Orb’s Adventures Beyond the Ultraworld'],['Belfast','Orbital','Orbital'],['Papua New Guinea','The Future Sound of London','Accelerator']];
+const tracks=fixtures.slice(0,4).map(([title,artist,album],i)=>({id:'generated-'+i,title,artist,album:i===3?'Hackers Original Soundtrack':album,albumId:'generated-album',duration:100,format:'wav',trackNumber:i+1,artworkId:null}));
+const csv='Title,Artist,Album,Track Duration (ms)\n'+fixtures.map(row=>row.map(s=>'"'+s.replaceAll('"','""')+'"').join(',')+',100000').join('\n');const store=new ImportStore(auth),id=store.create(user.id,'Preview · Generated test catalog',parsePlaylistCsv(csv));const entries=store.entries(user.id,id);for(const entry of entries)Object.assign(entry,matchImported(entry.metadata,tracks),{checkedAt:Date.now()});store.save(user.id,id,entries);
+const sampleRate=8000,seconds=100,wav=Buffer.alloc(44+sampleRate*seconds*2);wav.write('RIFF');wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(sampleRate,24);wav.writeUInt32LE(sampleRate*2,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(wav.length-44,40);for(let i=0;i<sampleRate*seconds;i++)wav.writeInt16LE(Math.round(Math.sin(i/sampleRate*Math.PI*2*220)*1000),44+i*2);
+auth.savePlayback(user.id,JSON.stringify({...emptyPlayback(),queue:[{key:'preview-track',source:'local',trackId:tracks[0].id}],order:['preview-track'],current:'preview-track'}));
+const library={overview:async()=>({artists:3,albums:1,tracks:4,scanning:false}),artists:async()=>[],albums:async()=>({items:[],nextOffset:null}),search:async()=>({artists:[],albums:[],tracks}),track:async id=>{const t=tracks.find(t=>t.id===id);if(!t)throw new Error('Unknown fixture');return t;},stream:async(_id,_format,range)=>{let start=0,end=wav.length-1;const m=range&&/^bytes=(\d+)-(\d*)$/.exec(range);if(m){start=Number(m[1]);if(m[2])end=Math.min(Number(m[2]),end);}return new Response(wav.subarray(start,end+1),{status:m?206:200,headers:{'content-type':'audio/wav','accept-ranges':'bytes','content-length':String(end-start+1),...(m?{'content-range':`bytes ${start}-${end}/${wav.length}`}:{})}});}};
+const previewPort=Number(process.env.FREEQIFY_IMPORT_PREVIEW_PORT??0);if(!Number.isInteger(previewPort)||previewPort<0||previewPort>65535)throw new Error('Invalid preview port');
+const app=await createApp(config,{authStore:auth,library});await app.listen({host:'127.0.0.1',port:previewPort});const url='http://127.0.0.1:'+app.server.address().port+'/';await writeFile('/tmp/freeqify-import-preview-url',url,{mode:0o600});console.log('Isolated generated-catalog preview:',url);console.log('Preview account: preview-owner. Disposable passphrase is documented in this fixture script.');
+for(const sig of ['SIGINT','SIGTERM'])process.once(sig,()=>{void app.close().then(()=>process.exit(0));});

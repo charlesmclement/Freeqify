@@ -1,0 +1,13 @@
+// @vitest-environment jsdom
+import {afterEach,beforeEach,expect,it,vi} from 'vitest';
+import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {AccountProvider,useAccount} from './Authentication.js';
+import {rememberOfflineAccount,offlineAccount} from './offline-store.js';
+const user={id:'one',username:'Owner',role:'admin' as const,status:'active' as const,createdAt:1};
+function Probe(){const account=useAccount();return <><p>{account.state?.user?`${account.state.user.id}:${account.state.user.role}:${account.offline?'device':'server'}`:'signed out'}</p><button onClick={()=>void account.logout()}>Logout</button><button onClick={account.refresh}>Reconnect</button></>;}
+beforeEach(()=>{localStorage.clear();rememberOfflineAccount(user);});
+afterEach(()=>{cleanup();vi.unstubAllGlobals();localStorage.clear();});
+it('opens local-only access after a network failure without retaining server authority or credentials',async()=>{vi.stubGlobal('fetch',vi.fn().mockRejectedValue(new TypeError('Offline')));render(<AccountProvider><Probe/></AccountProvider>);await screen.findByText('one:listener:device');expect(fetch).toHaveBeenCalledTimes(1);fireEvent.click(screen.getByText('Logout'));await screen.findByText('signed out');expect(offlineAccount()).toBeNull();expect(vi.mocked(fetch).mock.calls.some(([path])=>String(path).includes('auth/logout'))).toBe(false);});
+it('does not restore device access after the server confirms an unauthenticated session',async()=>{vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({user:null,csrf:'a'.repeat(64),expiresAt:1})}));render(<AccountProvider><Probe/></AccountProvider>);await waitFor(()=>expect(offlineAccount()).toBeNull());expect(screen.getByText('signed out')).toBeTruthy();});
+it('restores server authority only after successful session verification on reconnect',async()=>{const fetcher=vi.fn().mockRejectedValue(new TypeError('Offline'));vi.stubGlobal('fetch',fetcher);render(<AccountProvider><Probe/></AccountProvider>);await screen.findByText('one:listener:device');fetcher.mockResolvedValue({ok:true,json:async()=>({user,csrf:'b'.repeat(64),expiresAt:Date.now()+10000})});fireEvent.click(screen.getByText('Reconnect'));await screen.findByText('one:admin:server');});
+it('drops server authority on disconnection without clearing the device account',async()=>{vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({user,csrf:'a'.repeat(64),expiresAt:Date.now()+10000})}));render(<AccountProvider><Probe/></AccountProvider>);await screen.findByText('one:admin:server');window.dispatchEvent(new Event('offline'));await screen.findByText('one:listener:device');expect(offlineAccount()?.id).toBe('one');});
