@@ -42,10 +42,10 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env, root = projectR
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30000) throw new Error('NAVIDROME_TIMEOUT_MS must be 100–30000');
   const secureValue = env.AUTH_SECURE_COOKIES ?? (env.NODE_ENV === 'production' ? 'true' : 'false');
   if (!['true', 'false'].includes(secureValue)) throw new Error('AUTH_SECURE_COOKIES must be true or false');
-  const sessionHours = Number(env.SESSION_HOURS ?? 168);
-  const idleMinutes = Number(env.SESSION_IDLE_MINUTES ?? 30);
+  const sessionHours = Number(env.SESSION_HOURS ?? 720);
+  const idleMinutes = Number(env.SESSION_IDLE_MINUTES ?? 43200);
   if (!Number.isInteger(sessionHours) || sessionHours < 1 || sessionHours > 720) throw new Error('SESSION_HOURS must be 1–720');
-  if (!Number.isInteger(idleMinutes) || idleMinutes < 1 || idleMinutes > 1440) throw new Error('SESSION_IDLE_MINUTES must be 1–1440');
+  if (!Number.isInteger(idleMinutes) || idleMinutes < 1 || idleMinutes > 43200) throw new Error('SESSION_IDLE_MINUTES must be 1–43200');
   const resources={...defaultResources};
   const resourceEnv:Record<keyof ResourceLimits,string>={streams:'MAX_STREAMS',streamsPerUser:'MAX_STREAMS_PER_USER',transcodes:'MAX_TRANSCODES',catalog:'MAX_CATALOG_REQUESTS',catalogPerUser:'MAX_CATALOG_PER_USER',catalogTimeoutMs:'CATALOG_TIMEOUT_MS',requestsPerMinute:'REQUESTS_PER_MINUTE',personalBytes:'PERSONAL_BYTES_PER_USER',totalPersonalBytes:'PERSONAL_BYTES_TOTAL',metadataBytes:'METADATA_BYTES_PER_TRACK',databaseBytes:'DATABASE_MAX_BYTES',minFreeBytes:'MIN_DATA_FREE_BYTES'};
   for(const key of Object.keys(resources) as (keyof ResourceLimits)[]){const raw=env[resourceEnv[key]];if(raw!==undefined){const n=Number(raw);if(!/^\d+$/.test(raw)||!Number.isSafeInteger(n)||n<1||n>16*1024*1024*1024)throw new Error(`${resourceEnv[key]} must be a positive bounded integer`);resources[key]=n;}}

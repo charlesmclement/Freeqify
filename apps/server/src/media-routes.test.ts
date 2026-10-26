@@ -19,7 +19,7 @@ async function fixture(base = '/', recheck = 10) {
   registerMediaRoutes(app, `${base}api/library`, { stream } as unknown as MusicLibrary, store, 300, recheck);
   cleanup.push(async () => { await app.close(); store.close(); });
   const request = (method: 'GET' | 'HEAD' = 'GET', path = 'song', headers = {}) => app.inject({ method, url: `${base}api/library/stream/${path}`, headers: { cookie: `freeqify_session=${session.token}`, ...headers } });
-  return { app, store, user, session, stream, request, expire: () => { now += 8 * 86400000; } };
+  return { app, store, user, session, stream, request, expire: () => { now += 31 * 86400000; } };
 }
 describe.each(['/', '/freeqify/'])('authenticated media %s', base => {
   it('streams audio and HEAD metadata without exposing upstream headers', async () => {
@@ -45,7 +45,7 @@ describe.each(['/', '/freeqify/'])('authenticated media %s', base => {
   });
   it.each([401,403,404,500,302])('sanitizes upstream status %s', async status => {
     const f = await fixture(base); f.stream.mockResolvedValue(new Response('secret password', { status, headers: { 'set-cookie': 'secret', location: 'http://evil', 'content-type': 'text/xml' } }));
-    const response = await f.request(); expect(response.statusCode).toBe(status < 500 && status !== 302 ? status : 502); expect(response.body).not.toContain('secret'); expect(response.headers.location).toBeUndefined(); expect(response.headers['set-cookie']).toBeUndefined();
+    const response = await f.request(); expect(response.statusCode).toBe(status === 404 ? 404 : 502); expect(response.body).not.toContain('secret'); expect(response.headers.location).toBeUndefined(); expect(response.headers['set-cookie']).toBeUndefined();
   });
   it('forwards a single byte range and preserves 206 and 416', async () => {
     const f = await fixture(base); f.stream.mockResolvedValueOnce(new Response(new Uint8Array([2,3]), { status: 206, headers: { 'content-type': 'audio/wav', 'content-range': 'bytes 1-2/4', 'content-length': '2', 'accept-ranges': 'bytes' } }));

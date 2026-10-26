@@ -8,8 +8,9 @@ import { AccountProvider } from './Authentication.js';
 import { Playback, usePlayer } from './Player.js';
 import { emptyPlayback, type Track } from '@freeqify/shared';
 const tracks: Track[] = [0,1,2].map(i => ({ id: `t${i}`, title: `Song ${i}`, artist: 'Artist', album: 'Album', duration: 120, format: i ? 'wav' : 'mp3', artworkId: null, albumId: 'album', trackNumber: i+1 }));
+const loadSong=vi.hoisted(()=>vi.fn());
 const user = { id: 'listener', username: 'listener', role: 'listener', status: 'active', createdAt: 0 };
-beforeEach(() => { localStorage.clear();window.history.replaceState(null,'','/'); vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {}); vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {}); vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(); });
+beforeEach(() => { loadSong.mockImplementation((_key:string,source:string)=>Promise.resolve(`blob:${source}`));localStorage.clear();window.history.replaceState(null,'','/'); vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {}); vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {}); vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 function Controls() { const p = usePlayer(); const [view, setView] = useState(false); return <><button onClick={() => p.play(tracks)}>Start album</button><button onClick={() => p.add(tracks[0]!)}>Add song</button><button onClick={() => setView(!view)}>Browse</button><div>{view ? 'Administrative view' : 'Library view'}</div></>; }
 function setup(restored = emptyPlayback(),mainPane=false) {
@@ -84,7 +85,7 @@ it('keeps full-player queue collapse independent of playback, seek and visualize
  fireEvent.click(screen.getByRole('button',{name:'Close Now Playing'}));expect(screen.getByRole('button',{name:'Hide seek bar'})).toHaveAttribute('aria-expanded','true');expect(element()).toBe(audio);
 });
 
-vi.mock('./song-buffer.js',()=>({SongTooLarge:class extends Error{},SongBuffer:class{retain(){}clear(){}has(){return false;}source(){return 'server';}get(_key:string,source:string){return Promise.resolve(`blob:${source}`);}}}));
+vi.mock('./song-buffer.js',()=>({SongTooLarge:class extends Error{},SongBuffer:class{retain(){}clear(){}has(){return false;}source(){return 'server';}get(key:string,source:string){return loadSong(key,source);}}}));
 
 it('expands and collapses the dock seek controls without changing the audio source or loading it again',async()=>{
  setup();await waitFor(()=>expect(screen.getByText('Find your frequency')).toBeVisible());fireEvent.click(screen.getByText('Start album'));
@@ -122,4 +123,27 @@ it('shows earlier queue songs and replays one without replacing the queue or aud
  fireEvent.click(screen.getByRole('button',{name:'Show playback queue'}));fireEvent.click(screen.getByRole('button',{name:'Earlier (2)'}));
  const earlier=screen.getByLabelText('Earlier in this queue');await waitFor(()=>expect(earlier).toHaveTextContent('Song 0'));
  fireEvent.click(screen.getByRole('button',{name:'Play Song 0'}));await waitFor(()=>expect(element().src).toContain('/stream/t0'));expect(element()).toBe(audio);expect(document.querySelectorAll('.queue-scroll li')).toHaveLength(3);
+});
+
+it('keeps the persistent player and prepared audio attached during manual session rechecks',async()=>{
+ setup();await screen.findByText('Find your frequency');fireEvent.click(screen.getByText('Start album'));
+ await waitFor(()=>expect(element().src).toContain('/stream/t0'));
+ const audio=element(),src=audio.src,loads=vi.mocked(HTMLMediaElement.prototype.load).mock.calls.length;
+ // A server interruption enters device mode; focus verifies the same live session.
+ fireEvent(window,new Event('freeqify:server-unavailable'));
+ fireEvent.focus(window);
+ await waitFor(()=>expect(element()).toBe(audio));
+ expect(audio.src).toBe(src);expect(vi.mocked(HTMLMediaElement.prototype.load).mock.calls.length).toBe(loads);
+});
+
+it('retries an interrupted selected song after verified server recovery',async()=>{
+ setup();await screen.findByText('Find your frequency');
+ loadSong.mockRejectedValue(new TypeError('Connection dropped'));
+ fireEvent.click(screen.getByText('Start album'));await screen.findByText('Connection dropped');
+ const audio=element();fireEvent(window,new Event('freeqify:server-unavailable'));
+ loadSong.mockImplementation((_key:string,source:string)=>Promise.resolve(`blob:${source}`));
+ fireEvent.focus(window);
+ await waitFor(()=>expect(audio.src).toContain('/stream/t0'));
+ expect(element()).toBe(audio);expect(screen.queryByText('Connection dropped')).toBeNull();
+ expect(HTMLMediaElement.prototype.play).toHaveBeenCalled();
 });

@@ -1,5 +1,5 @@
 import {rememberOfflineAccount,forgetOfflineAccount,offlineAccount,deviceSignoutPending,setDeviceSignout} from './offline-store.js';
-import { createContext, useContext, useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import type { AuthState } from '@freeqify/shared';
 import { accountRequest, validAuthState } from './auth-api.js';
 interface AccountContext {
@@ -15,22 +15,24 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const [offline,setOffline]=useState(false);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
+  const checking=useRef(false);
   const [invitation] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get('invite') ?? '');
   useEffect(() => {
     if (invitation) window.history.replaceState(null, '', window.location.pathname + window.location.search);
   }, [invitation]);
   useEffect(() => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => { controller.abort();const user=offlineAccount();if(user){setOffline(true);setState({user,csrf:'',expiresAt:0});setError('');}else setError('The account service took too long to respond.'); }, 10000);
-    if(!navigator.onLine){const user=offlineAccount();if(user){clearTimeout(timeout);queueMicrotask(()=>{if(!controller.signal.aborted){setOffline(true);setState({user,csrf:'',expiresAt:0});}});return ()=>controller.abort();}}
+    checking.current=true;
+    const timeout = setTimeout(() => { controller.abort();checking.current=false;const user=offlineAccount();if(user){setOffline(true);setState({user,csrf:'',expiresAt:0});setError('');}else setError('The account service took too long to respond.'); }, 10000);
+    if(!navigator.onLine){const user=offlineAccount();if(user){checking.current=false;clearTimeout(timeout);queueMicrotask(()=>{if(!controller.signal.aborted){setOffline(true);setState({user,csrf:'',expiresAt:0});}});return ()=>{checking.current=false;controller.abort();};}}
     accountRequest<AuthState>('auth/session', undefined, undefined, controller.signal).then(async value => {
       if(deviceSignoutPending()&&validAuthState(value)){if(value.user)await accountRequest('auth/logout',value.csrf,{},controller.signal);setDeviceSignout(false);value=await accountRequest<AuthState>('auth/session',undefined,undefined,controller.signal);}
       if (!validAuthState(value)) throw new Error('The account service returned an invalid response.');
-      if (!controller.signal.aborted) {setOffline(false);setState(value);if(value.user)rememberOfflineAccount(value.user);else forgetOfflineAccount();}
-    }).catch(() => { if (!controller.signal.aborted) {const user=offlineAccount();if(user){setOffline(true);setState({user,csrf:'',expiresAt:0});setError('');}else setError('The account service is unavailable. Please try again.');} }).finally(() => clearTimeout(timeout));
-    return () => { controller.abort(); clearTimeout(timeout); };
+      if (!controller.signal.aborted) {setOffline(false);setError('');setState(value);if(value.user)rememberOfflineAccount(value.user);else forgetOfflineAccount();}
+    }).catch(() => { if (!controller.signal.aborted) {const user=offlineAccount();if(user){setOffline(true);setState({user,csrf:'',expiresAt:0});setError('');}else setError('The account service is unavailable. Please try again.');} }).finally(() => {checking.current=false;clearTimeout(timeout);});
+    return () => { checking.current=false;controller.abort(); clearTimeout(timeout); };
   }, [revision]);
-  function refresh() { if(!offline)setState(null);setError('');setRevision(n => n + 1); }
+  function refresh() { setError('');setRevision(n => n + 1); }
   useEffect(() => {
     const invalidated = () => { forgetOfflineAccount();setOffline(false);setState(null); setError(''); setRevision(n => n + 1); };
     const refreshed = (event: Event) => { const value = (event as CustomEvent<AuthState>).detail; if (validAuthState(value)) {setOffline(false);setState(value);if(value.user)rememberOfflineAccount(value.user);else forgetOfflineAccount();} };
@@ -38,7 +40,14 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     window.addEventListener('freeqify:unauthenticated', invalidated);
     return () => { window.removeEventListener('freeqify:unauthenticated', invalidated); window.removeEventListener('freeqify:session-refreshed', refreshed); };
   }, []);
-  useEffect(()=>{const reconnect=()=>{if(offline||deviceSignoutPending())setRevision(n=>n+1);};window.addEventListener('online',reconnect);return()=>window.removeEventListener('online',reconnect);},[offline]);
+  useEffect(()=>{
+    if(!offline&&!error&&!deviceSignoutPending())return;
+    const reconnect=()=>{if(navigator.onLine&&!checking.current)setRevision(n=>n+1);};
+    const visible=()=>{if(document.visibilityState==='visible')reconnect();};
+    const timer=setInterval(reconnect,5000);
+    window.addEventListener('online',reconnect);window.addEventListener('focus',reconnect);document.addEventListener('visibilitychange',visible);
+    return()=>{clearInterval(timer);window.removeEventListener('online',reconnect);window.removeEventListener('focus',reconnect);document.removeEventListener('visibilitychange',visible);};
+  },[offline,error,revision]);
   function signedIn(value:AuthState){setDeviceSignout(false);setOffline(false);setState(value);if(value.user)rememberOfflineAccount(value.user);}
   useEffect(()=>{const disconnected=()=>{if(state?.user&&!offline){rememberOfflineAccount(state.user);setOffline(true);setState({user:{...state.user,role:'listener'},csrf:'',expiresAt:0});}};window.addEventListener('offline',disconnected);window.addEventListener('freeqify:server-unavailable',disconnected);return()=>{window.removeEventListener('offline',disconnected);window.removeEventListener('freeqify:server-unavailable',disconnected);};},[state,offline]);
   async function logout() {

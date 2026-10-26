@@ -99,3 +99,7 @@ license requires. Private modifications and hosting alone do not require publish
 changes. Third-party components retain their own licenses, including the notices
 in `apps/web/src/milkdrop/`. Music and personal library data are not covered by the
 software license.
+
+Session defaults are 30 days (`SESSION_HOURS=720`, `SESSION_IDLE_MINUTES=43200`). Each successful login creates a fresh 30-day session; logout, password changes and administrative revocation still invalidate it immediately. Existing explicit configuration keeps its selected lifetime; update those two settings to use the longer lifetime. Existing sessions retain their original expiry until you sign in again.
+
+Temporary connection failures automatically retry session verification every five seconds while disconnected, including when the browser still reports online. Returning to the app also retries. Ready audio stays attached; an interrupted song retries after the same account reconnects.

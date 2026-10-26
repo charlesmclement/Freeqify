@@ -41,7 +41,8 @@ export class SongBuffer {
    if(entry.controller.signal.aborted)throw aborted();
    try{return await this.read(source,entry,consumer);}
    catch(e){consumer?.failed();if(entry.controller.signal.aborted)throw aborted();
-    if(e instanceof SongTooLarge||e instanceof SongFetchError&&e.status<500&&e.status!==429||attempt>=2)throw e;
+    if(e instanceof SongTooLarge||e instanceof SongFetchError&&e.status<500&&e.status!==429)throw e;
+    if(attempt>=2){window.dispatchEvent(new Event('freeqify:server-unavailable'));throw e;}
     await new Promise<void>((resolve,reject)=>{const signal=entry.controller.signal;const stop=()=>{clearTimeout(timer);reject(aborted());};const timer=setTimeout(()=>{signal.removeEventListener('abort',stop);resolve();},1000*(attempt+1));signal.addEventListener('abort',stop,{once:true});if(signal.aborted)stop();});
    }
   }

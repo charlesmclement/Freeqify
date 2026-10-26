@@ -41,3 +41,14 @@ it('retains normal streaming when there is no local file and fails closed on a c
 it('prefers a new completed download over an already buffered server copy when the track is prepared again',async()=>{let saved:Blob|null=null;const cache=new SongBuffer(3,async()=>saved);vi.mocked(fetch).mockResolvedValue(response(new Uint8Array([1])));const server=await cache.get('song:raw','/stream');expect(cache.source('song:raw')).toBe('server');saved=new Blob([new Uint8Array([2,3])],{type:'audio/mpeg'});const device=await cache.get('song:raw','/stream');expect(device).not.toBe(server);expect(cache.source('song:raw')).toBe('device');expect(fetch).toHaveBeenCalledOnce();expect(URL.revokeObjectURL).toHaveBeenCalledWith(server);cache.clear();});
 
 it('keeps an existing temporary server buffer playable when local lookup becomes unavailable offline',async()=>{let offline=false;const cache=new SongBuffer(3,async()=>{if(offline)throw new Error('No local file');return null;});vi.mocked(fetch).mockResolvedValue(response(new Uint8Array([1])));const url=await cache.get('song:raw','/stream');offline=true;expect(await cache.get('song:raw','/stream')).toBe(url);expect(fetch).toHaveBeenCalledOnce();expect(cache.source('song:raw')).toBe('server');cache.clear();});
+
+it('requests connection recovery after exhausting transient audio retries without reporting logout',async()=>{
+ vi.useFakeTimers();const unavailable=vi.fn(),logout=vi.fn();
+ window.addEventListener('freeqify:server-unavailable',unavailable);window.addEventListener('freeqify:unauthenticated',logout);
+ try{
+  vi.mocked(fetch).mockRejectedValue(new TypeError('Connection dropped'));
+  const cache=new SongBuffer();const pending=expect(cache.get('retry:raw','/stream')).rejects.toThrow('Connection dropped');
+  await vi.advanceTimersByTimeAsync(4000);await pending;
+  expect(fetch).toHaveBeenCalledTimes(3);expect(unavailable).toHaveBeenCalledOnce();expect(logout).not.toHaveBeenCalled();
+ }finally{window.removeEventListener('freeqify:server-unavailable',unavailable);window.removeEventListener('freeqify:unauthenticated',logout);}
+});

@@ -36,11 +36,27 @@ it('upgrades a Phase 2 database additively and restores playback after restart',
   try { expect(store.db.prepare('SELECT * FROM users').get()).toEqual(original); expect(JSON.parse(String(store.db.prepare('SELECT state FROM playback_state').get()?.state))).toEqual(emptyPlayback()); expect(store.db.prepare('PRAGMA user_version').get()?.user_version).toBe(12); } finally { store.close(); }
 });
 it('authorization polling does not extend idle sessions', async () => {
-  let now = Date.now(); const config = readConfig({}); const store = new AuthStore(':memory:', config.auth, () => now);
+  let now = Date.now(); const config = readConfig({SESSION_IDLE_MINUTES:'30'}); const store = new AuthStore(':memory:', config.auth, () => now);
   const user = await store.createInitialAdmin('idle-owner', 'a-long-idle-test-password'); const session = store.createSession(user); const app = Fastify(); registerAuthentication(app, '/api', config, store);
   cleanups.push(async () => { await app.close(); store.close(); });
   const before = store.db.prepare('SELECT idle_expires_at FROM sessions').get()?.idle_expires_at;
   now += 1000; const headers = { cookie: `freeqify_session=${session.token}` };
   expect((await app.inject({ url: '/api/playback/status', headers })).statusCode).toBe(200); expect(store.db.prepare('SELECT idle_expires_at FROM sessions').get()?.idle_expires_at).toBe(before);
   now += 31 * 60000; expect((await app.inject({ url: '/api/playback/status', headers })).statusCode).toBe(401);
+});
+
+it('keeps default sessions for 30 days and starts a fresh full lifetime on another login',async()=>{
+ let now=Date.now();const config=readConfig({});
+ expect(config.auth).toMatchObject({sessionHours:720,idleMinutes:43200});
+ const store=new AuthStore(':memory:',config.auth,()=>now);
+ try{
+  const user=await store.createInitialAdmin('long-session-owner','a-long-session-test-password');
+  const first=store.createSession(user);expect(first.expiresAt).toBe(now+30*86400000);
+  now+=29*86400000;expect(store.session(first.token,false)?.user?.id).toBe(user.id);
+  const renewed=store.createSession(user,first.token);expect(renewed.expiresAt).toBe(now+30*86400000);
+  expect(store.session(first.token,false)).toBeNull();
+  now+=29*86400000;expect(store.session(renewed.token,false)?.user?.id).toBe(user.id);
+  store.logout(renewed.token);expect(store.session(renewed.token,false)).toBeNull();
+  const expired=store.createSession(user);now+=30*86400000;expect(store.session(expired.token,false)).toBeNull();
+ }finally{store.close();}
 });

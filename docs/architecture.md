@@ -952,3 +952,9 @@ that track from every local collection and deletes its chunks, after stopping an
 matching transfer. Shared removal is confirmed with its selection owners. Releasing
 only one reference remains available separately. Online AlbumArtwork uses live
 server cover resolution; only device-only playback uses the saved cover.
+
+### Playback connection recovery
+
+Disconnected account state retries session verification every five seconds (one probe at a time), and on online, focus or visible-page events. Manual reconnect preserves the player until verification confirms logout or a different identity. Account fetches have a 12-second deadline; catalog fetches have a 30-second deadline. Exhausted temporary audio retries trigger connection verification, and interrupted current audio retries after verified recovery without restarting ready audio. Upstream media 401/403 responses map to 502, never to a Freeqify session-expiry signal.
+
+Authenticated sessions default to 720 hours absolute and 43,200 minutes idle (30 days); each successful login resets both through a fresh opaque session. Explicit configuration overrides these defaults, and existing sessions keep their stored expiry. Status polling still does not renew idle expiry. Logout, password changes, disabled accounts and revocation remain effective immediately.

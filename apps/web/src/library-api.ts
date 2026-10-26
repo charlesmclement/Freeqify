@@ -1,7 +1,7 @@
 import type { LibraryErrorResponse } from '@freeqify/shared';
 export const libraryUrl = (path: string) => `${import.meta.env.BASE_URL}api/library/${path}`;
 export async function readLibrary<T>(path: string, signal: AbortSignal): Promise<T> {
-  const response = await fetch(libraryUrl(path), { signal, credentials: 'same-origin' }).catch(error=>{if(!signal.aborted)window.dispatchEvent(new Event('freeqify:server-unavailable'));throw error;});
+  const response = await fetch(libraryUrl(path), { signal: AbortSignal.any([signal,AbortSignal.timeout(30000)]), credentials: 'same-origin' }).catch(error=>{if(!signal.aborted)window.dispatchEvent(new Event('freeqify:server-unavailable'));throw error;});
   if (!response.ok) {
     if (response.status === 401) {
       window.dispatchEvent(new Event('freeqify:unauthenticated'));

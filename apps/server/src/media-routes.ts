@@ -52,7 +52,7 @@ export function registerMediaRoutes(app: FastifyInstance, prefix: string, librar
       clearTimeout(timer);
       if (![200, 206, 416].includes(response.status)) {
         await response.body?.cancel();
-        const status = [401, 403, 404].includes(response.status) ? response.status : 502;
+        const status = response.status === 404 ? 404 : 502;
         cleanup(); return reply.code(status).send({ error: 'Music stream unavailable' });
       }
       const type = response.headers.get('content-type')?.split(';')[0]?.toLowerCase() ?? '';

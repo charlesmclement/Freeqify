@@ -11,3 +11,31 @@ it('opens local-only access after a network failure without retaining server aut
 it('does not restore device access after the server confirms an unauthenticated session',async()=>{vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({user:null,csrf:'a'.repeat(64),expiresAt:1})}));render(<AccountProvider><Probe/></AccountProvider>);await waitFor(()=>expect(offlineAccount()).toBeNull());expect(screen.getByText('signed out')).toBeTruthy();});
 it('restores server authority only after successful session verification on reconnect',async()=>{const fetcher=vi.fn().mockRejectedValue(new TypeError('Offline'));vi.stubGlobal('fetch',fetcher);render(<AccountProvider><Probe/></AccountProvider>);await screen.findByText('one:listener:device');fetcher.mockResolvedValue({ok:true,json:async()=>({user,csrf:'b'.repeat(64),expiresAt:Date.now()+10000})});fireEvent.click(screen.getByText('Reconnect'));await screen.findByText('one:admin:server');});
 it('drops server authority on disconnection without clearing the device account',async()=>{vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({user,csrf:'a'.repeat(64),expiresAt:Date.now()+10000})}));render(<AccountProvider><Probe/></AccountProvider>);await screen.findByText('one:admin:server');window.dispatchEvent(new Event('offline'));await screen.findByText('one:listener:device');expect(offlineAccount()?.id).toBe('one');});
+
+it('recovers from a server-only outage without an online event or manual reconnect',async()=>{
+ const {act}=await import('@testing-library/react');
+ const fetcher=vi.fn().mockRejectedValue(new TypeError('Server unreachable'));vi.stubGlobal('fetch',fetcher);
+ render(<AccountProvider><Probe/></AccountProvider>);await screen.findByText('one:listener:device');
+ vi.useFakeTimers();
+ try{
+  // A failed retry must schedule another even though the browser stayed online.
+  fireEvent.focus(window);
+  await act(async()=>{});
+  await act(async()=>{await vi.advanceTimersByTimeAsync(5000);});
+  expect(fetcher.mock.calls.length).toBeGreaterThanOrEqual(3);
+  fetcher.mockResolvedValue({ok:true,json:async()=>({user,csrf:'c'.repeat(64),expiresAt:Date.now()+100000})});
+  await act(async()=>{await vi.advanceTimersByTimeAsync(5000);});
+  expect(screen.getByText('one:admin:server')).toBeTruthy();
+ }finally{vi.useRealTimers();}
+});
+
+it('can reconnect when launched with the browser initially offline',async()=>{
+ const {act}=await import('@testing-library/react');
+ const online=vi.spyOn(navigator,'onLine','get').mockReturnValue(false);
+ const fetcher=vi.fn().mockResolvedValue({ok:true,json:async()=>({user,csrf:'d'.repeat(64),expiresAt:Date.now()+100000})});vi.stubGlobal('fetch',fetcher);
+ try{
+  render(<AccountProvider><Probe/></AccountProvider>);await screen.findByText('one:listener:device');expect(fetcher).not.toHaveBeenCalled();
+  online.mockReturnValue(true);await act(async()=>{window.dispatchEvent(new Event('online'));});
+  await screen.findByText('one:admin:server');expect(fetcher).toHaveBeenCalledOnce();
+ }finally{online.mockRestore();}
+});

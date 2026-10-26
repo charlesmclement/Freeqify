@@ -47,6 +47,7 @@ function Player({ children }: { children: ReactNode }) {
   const [bufferReady,setBufferReady]=useState('');
   const [bufferRevision,setBufferRevision]=useState(0);
   const loadingSong=useRef(false);
+  const interruptedSong=useRef(false);
   const progressive=useRef<ProgressiveAudio|null>(null);
   const [bufferWantsPlay,setBufferWantsPlay]=useState(false);
   useEffect(()=>()=>buffers.clear(),[buffers]);
@@ -171,7 +172,7 @@ function Player({ children }: { children: ReactNode }) {
     return () => controller.abort();
     // Metadata does not change queue membership.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.queue, state.current, state.order, queueOpen, pageOffset,fullOpen,nextKey,showEarlier]);
+  }, [state.queue, state.current, state.order, queueOpen, pageOffset,fullOpen,nextKey,showEarlier,account.offline]);
   const bufferKey=current?`${current.trackId}:${format}`:'';
   const nextBufferKey=nextItem?`${nextItem.trackId}:raw`:'';
   useEffect(()=>{buffers.retain([bufferKey,nextBufferKey].filter(Boolean));},[bufferKey,nextBufferKey,buffers]);
@@ -181,7 +182,7 @@ function Player({ children }: { children: ReactNode }) {
     const element = audio.current; if (!element) return;
     let stopped=false;
     element.pause();element.removeAttribute('src');element.load();setLength(0);setSeekable(false);setBufferReady('');setBufferStatus('');
-    loadingSong.current=!!current;
+    loadingSong.current=!!current;interruptedSong.current=false;
     if (!current) {buffers.clear();loadingSong.current=false;setBufferWantsPlay(false);return;}
 
     const source=libraryUrl(`stream/${encodeURIComponent(current.trackId)}?format=${format}`);
@@ -201,12 +202,21 @@ function Player({ children }: { children: ReactNode }) {
      void buffers.get(bufferKey,source,(loaded,total)=>{if(!stopped)setBufferStatus(total?`Buffering song… ${Math.floor(100*loaded/total)}%`:`Buffering song… ${(loaded/1048576).toFixed(1)} MB`);},progressiveSong,()=>{if(needsMp3){setFormat('mp3');throw new DOMException('Selecting compatibility format','AbortError');}})
       .then(url=>{if(stopped)return;if(progressiveSong.finished){setBufferReady(bufferKey);setBufferStatus('Whole song ready.');}else{if(progressiveSong.attached)restorePosition.current=element.currentTime;progressiveSong.dispose();attach(url);}}).catch(e=>{if(stopped)return;loadingSong.current=false;setBufferWantsPlay(false);
        if(e instanceof SongTooLarge&&format==='raw'&&track?.format?.toLowerCase()!=='mp3'){setFormat('mp3');setMessage('Preparing a smaller MP3 buffer. Original audio is unchanged.');return;}
+       interruptedSong.current=true;
        setBufferStatus(e instanceof Error?e.message:'Could not load the complete song. Retry when connected.');
       });
     return () => { stopped=true;progressiveSong.dispose();if(progressive.current===progressiveSong)progressive.current=null;element.pause();element.removeAttribute('src');element.load(); };
     // Source identity is independent of progress, navigation, and metadata updates.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentKey, format,bufferRevision]);
+  // Session recovery must not reload a ready or currently playing source.
+  const wasOffline=useRef(account.offline);
+  useEffect(()=>{
+    const reconnected=wasOffline.current&&!account.offline;wasOffline.current=account.offline;
+    if(reconnected&&interruptedSong.current&&latest.current.current){
+      restorePosition.current=latest.current.position;setBufferRevision(n=>n+1);
+    }
+  },[account.offline]);
   /* eslint-enable react-hooks/set-state-in-effect */
   useEffect(()=>{
    if(bufferReady!==bufferKey||!nextItem||nextBufferKey===bufferKey)return;

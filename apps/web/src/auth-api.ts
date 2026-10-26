@@ -10,7 +10,7 @@ function remember(value: unknown) {
 }
 export async function accountRequest<T>(path: string, csrf?: string, input?: unknown, signal?: AbortSignal, recovered = false): Promise<T> {
   const response = await fetch(`${import.meta.env.BASE_URL}api/${path}`, {
-    credentials: 'same-origin', ...(signal ? { signal } : {}),
+    credentials: 'same-origin', signal: AbortSignal.any([AbortSignal.timeout(12000), ...(signal ? [signal] : [])]),
     ...(input === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf ?? '' }, body: JSON.stringify(input) }),
   }).catch(error=>{if(!signal?.aborted)window.dispatchEvent(new Event('freeqify:server-unavailable'));throw error;});
   if (!response.ok) {
