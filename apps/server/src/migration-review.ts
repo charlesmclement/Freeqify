@@ -5,14 +5,14 @@ import {validPlayback,type Track} from '@freeqify/shared';
 import {LibraryError,type MusicLibrary,validId} from './integrations/navidrome.js';
 export interface ReferenceBaseline {
   version: 1;
-  schema: 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13;
+  schema: 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14;
   references: {id:string;status:'present'|'missing';fingerprint:string|null}[];
 }
-function compatibleSchema(db:DatabaseSync):5|6|7|8|9|10|11|12|13{
+function compatibleSchema(db:DatabaseSync):5|6|7|8|9|10|11|12|13|14{
   const schema=Number(db.prepare('PRAGMA user_version').get()?.user_version);
-  // Migrations 6–13 add artwork, imports, acquisition queues and library exclusions and audiobook references; the saved track and queue reference tables
+  // Migrations 6–14 add artwork, imports, acquisition queues and library exclusions and audiobook references plus a private derived transcript cache; the saved track and queue reference tables
   // audited by this tool are unchanged. Reject unknown or older schemas.
-  if(schema!==5&&schema!==6&&schema!==7&&schema!==8&&schema!==9&&schema!==10&&schema!==11&&schema!==12&&schema!==13)throw new Error('Migration review requires a compatible schema-5, schema-6, schema-7, schema-8, schema-9, schema-10, schema-11 schema-12 or schema-13 copy; do not reset or downgrade a database.');
+  if(schema!==5&&schema!==6&&schema!==7&&schema!==8&&schema!==9&&schema!==10&&schema!==11&&schema!==12&&schema!==13&&schema!==14)throw new Error('Migration review requires a compatible schema-5, schema-6, schema-7, schema-8, schema-9, schema-10, schema-11 schema-12, schema-13 or schema-14 copy; do not reset or downgrade a database.');
   return schema;
 }
 export function referenceIds(db:DatabaseSync):string[]{
@@ -47,7 +47,7 @@ export async function captureReferenceBaseline(db:DatabaseSync,library:Pick<Musi
   return {version:1,schema,references};
 }
 export async function verifyReferenceBaseline(db:DatabaseSync,library:Pick<MusicLibrary,'track'>,baseline:ReferenceBaseline){
-  if(baseline?.version!==1||(baseline.schema!==5&&baseline.schema!==6&&baseline.schema!==7&&baseline.schema!==8&&baseline.schema!==9&&baseline.schema!==10&&baseline.schema!==11&&baseline.schema!==12&&baseline.schema!==13)||!Array.isArray(baseline.references))throw new Error('Unsupported migration baseline.');
+  if(baseline?.version!==1||(baseline.schema!==5&&baseline.schema!==6&&baseline.schema!==7&&baseline.schema!==8&&baseline.schema!==9&&baseline.schema!==10&&baseline.schema!==11&&baseline.schema!==12&&baseline.schema!==13&&baseline.schema!==14)||!Array.isArray(baseline.references))throw new Error('Unsupported migration baseline.');
   const actual=await captureReferenceBaseline(db,library);
   // Verified snapshots may be upgraded through additive artwork schemas, never downgraded.
   // Only reference fingerprints are compared across these additive schemas.

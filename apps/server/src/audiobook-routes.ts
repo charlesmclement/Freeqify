@@ -1,3 +1,4 @@
+import {cachedTranscript,saveTranscript,transcribeBookPassage,transcriptKey,transcriptWindow} from './book-transcript.js';
 import {detectBookChapters} from './audiobook-chapters.js';
 import {readSpokenHeading} from './book-spoken-headings.js';
 import {Admission} from './resources.js';
@@ -71,6 +72,28 @@ export function registerAudiobookRoutes(app:FastifyInstance,prefix:string,auth:A
     const latest=store.get(active(request),id).chapters.find(c=>c.id===chapter.id);
     if(!latest||latest.partId!==chapter.partId||latest.position!==chapter.position)throw new AuthError(409,'BOOK_CONFLICT','This section changed. Reload the book before reading its heading.');
     return result;
+   }finally{clearInterval(recheck);request.raw.off('aborted',abort);reply.raw.off('close',abort);request.raw.socket.setTimeout?.(socketTimeout??30000);running.delete(controller);release();}
+  });
+  routes.post(`${prefix}/:id/transcript`,async(request,reply)=>{
+   const {id}=request.params as {id:string},body=request.body as Record<string,unknown>;
+   if(!validId(id)||!validId(body.partId)||typeof body.position!=='number'||!Number.isFinite(body.position)||body.position<0||Object.keys(body).some(k=>!['partId','position'].includes(k)))throw invalid();
+   const user=active(request),book=store.get(user,id),part=book.parts.find(p=>p.id===body.partId);
+   if(!part||!part.duration||!Number.isFinite(part.duration)||body.position>=part.duration)throw invalid();
+   const start=Math.floor(body.position/transcriptWindow)*transcriptWindow,end=Math.min(start+transcriptWindow,part.duration),reader=config.audiobookSpeech;
+   if(!reader||!config.audiobookTranscriptsEnabled)return {status:'disabled',provider:'Whisper',partId:part.id,start,end,lines:[]};
+   const key=transcriptKey(part,reader.model),cached=cachedTranscript(auth,user,id,part.id,key,start);
+   if(cached)return {status:'ready',provider:'Whisper',partId:part.id,start,end,lines:cached};
+   auth.limit(`book-transcript:${user}`,6,60000);
+   const release=speech.acquire(user),controller=new AbortController(),abort=()=>controller.abort();running.add(controller);
+   const socketTimeout=request.raw.socket.timeout;request.raw.socket.setTimeout?.(100000);
+   request.raw.on('aborted',abort);reply.raw.once('close',abort);
+   const recheck=setInterval(()=>{try{active(request);}catch{abort();}},1000);recheck.unref();
+   try{
+    const lines=await transcribeBookPassage(library,part,start,end-start,reader,controller.signal);
+    controller.signal.throwIfAborted();const latest=store.get(active(request),id).parts.find(p=>p.id===part.id);
+    if(!latest||transcriptKey(latest,reader.model)!==key)throw new AuthError(409,'BOOK_CONFLICT','This book part changed. Reopen its transcript.');
+    saveTranscript(auth,user,id,part.id,key,start,lines);
+    return {status:'ready',provider:'Whisper',partId:part.id,start,end,lines};
    }finally{clearInterval(recheck);request.raw.off('aborted',abort);reply.raw.off('close',abort);request.raw.socket.setTimeout?.(socketTimeout??30000);running.delete(controller);release();}
   });
   routes.post(`${prefix}/:id/chapter-titles`,{bodyLimit:128*1024},async request=>{

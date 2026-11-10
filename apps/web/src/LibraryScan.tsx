@@ -21,5 +21,5 @@ export function LibraryScan({admin,csrf,onComplete,disabled=false}:{admin:boolea
   const fail=(e:unknown)=>{if(!controller.signal.aborted){setError(e instanceof Error?e.message:'The library scan could not be checked.');setMessage('');setBusy(false);operation.current=null;}};
   try{await finish(await accountRequest<LibraryScanStatus>('library/scan',csrf,{},controller.signal));}catch(e){fail(e);}
  }
- return <div className="library-scan"><button disabled={disabled||busy} onClick={()=>void scan()}>{busy?'Scanning library…':'Scan music library'}</button><small>Administrator · Find newly imported music</small>{message&&<p role="status">{message}</p>}{error&&<p role="alert" className="account-error">{error}</p>}</div>;
+ return <div className="library-scan"><button aria-label={busy?'Scanning music library':'Scan music library'} disabled={disabled||busy} onClick={()=>void scan()}>{busy?'Scanning…':'Scan library'}</button><small>Administrator · Find newly imported music</small>{message&&<p role="status">{message}</p>}{error&&<p role="alert" className="account-error">{error}</p>}</div>;
 }

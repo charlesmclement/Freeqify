@@ -1,3 +1,4 @@
+import {Icon} from './Icons.js';
 import {BookSpokenHeadings} from './BookSpokenHeadings.js';
 import {useBookDownloads} from './BookDownloadsContext.js';
 import {downloaded,type DeviceBook} from './book-downloads.js';
@@ -48,7 +49,7 @@ export function Audiobooks(){
   <p className="library-caption">All your stories in one place. Your listening progress and bookmarks stay private.</p>
   {error&&<p role="alert">{error} <button onClick={()=>{setError('');if(active)playback?.close();refresh(n=>n+1);}}>Reload books</button></p>}
   {selected?<>
-   <button onClick={()=>{select(null);refresh(n=>n+1);}}>← Audiobooks</button>
+   <button className="library-back" aria-label="Back to audiobooks" title="Back to audiobooks" onClick={()=>{select(null);refresh(n=>n+1);}}><Icon name="back"/></button>
    {detail?<BookDetail key={detail.id} book={detail} mutate={mutate} changed={()=>refresh(n=>n+1)}/>:<p role="status">Loading book…</p>}
   </>:<>
    {!account.offline&&<nav className="library-tabs" aria-label="Audiobook library"><button aria-current={!shelf?'page':undefined} onClick={()=>{setError('');setShowShelf(false);}}>All books</button><button aria-current={shelf?'page':undefined} onClick={()=>{if(!shelf){setError('');setLoading(true);setShowShelf(true);}}}>My bookshelf</button></nav>}

@@ -80,7 +80,7 @@ it('opens a real album from Jump back in and returns to the Home dashboard',asyn
  fireEvent.click(albumButton!);
  expect(await screen.findByRole('heading',{name:'Catalog Album'})).toBeVisible();
  expect(screen.getByRole('button',{name:'Play album'})).toBeEnabled();
- fireEvent.click(screen.getByRole('button',{name:'← Back to overview'}));
+ fireEvent.click(screen.getByRole('button',{name:'Back to overview'}));
  expect(await screen.findByText('17')).toBeVisible();
 });
 

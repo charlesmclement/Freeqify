@@ -109,7 +109,7 @@ it('persists removals and existing sessions/personal data across application res
   await expect(removableLibrary(f.raw,removals).track('one')).rejects.toMatchObject({code:'NOT_FOUND'});
   expect(reopened.session(f.sessions[1]!.token)?.user?.id).toBe('listener');
   expect(new PersonalStore(reopened).favorites('listener')).toHaveLength(1);
-  expect(reopened.db.prepare('PRAGMA user_version').get()?.user_version).toBe(13);
+  expect(reopened.db.prepare('PRAGMA user_version').get()?.user_version).toBe(14);
  }finally{reopened.close();}
 });
 it('migration 12 is additive to schema 11 and retains every existing user row',()=>{

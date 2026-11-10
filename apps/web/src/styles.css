@@ -977,3 +977,48 @@ body:has(.shell.has-tools) .music-player{padding-top:4px}
 .listening-room.player-immersive .lyrics-panel{position:absolute;inset:70px 24px 190px;width:auto}
 @media(max-width:760px){.listening-room.player-immersive .lyrics-panel{inset:60px 12px 220px}}
 @media(max-height:600px) and (min-width:600px){.listening-room.player-immersive .lyrics-panel{inset:50px 12px 130px}}
+
+/* Lyrics use the same display area and Mode controls as the visualizers. */
+.visualizer-lyrics>.lyrics-panel{flex:1;overflow:hidden;border:0}
+.listening-room.player-immersive .visualizer.visualizer-lyrics{display:flex;padding:70px 24px 190px}
+.listening-room.player-immersive .visualizer-lyrics>.lyrics-panel{position:static;width:100%}
+@media(max-width:760px){.listening-room.player-immersive .visualizer.visualizer-lyrics{padding:60px 12px 220px}}
+@media(max-height:600px) and (min-width:600px){.listening-room.player-immersive .visualizer.visualizer-lyrics{padding:50px 12px 130px}}
+
+.wake-lock-status{position:absolute;top:64px;left:12px;right:12px;z-index:7;padding:8px;background:#13251b;color:#f0f7eb;font-size:12px}
+
+/* Library navigation and maintenance share one compact action row. */
+.music-library .library-toolbar{flex-wrap:nowrap;justify-content:flex-start;align-items:flex-start;gap:8px}
+.library-back,.music-library .library-toolbar>.library-back{display:inline-flex;align-items:center;justify-content:center;flex:0 0 36px;width:36px;height:36px;min-height:36px;padding:8px;margin:0;border:1px solid #3a473b;background:#171f19;color:#bbc9b7;cursor:pointer}
+.library-back svg{width:18px;height:18px}
+.library-toolbar .library-maintenance{flex:1;min-width:0;width:auto;max-width:340px;gap:8px}
+.library-toolbar .library-maintenance .library-scan>button,.library-toolbar .library-maintenance>.library-refresh{height:36px;min-height:36px;padding:6px;font-size:11px;white-space:nowrap}
+
+.personal-library .library-back,.audiobook-library .library-back{display:inline-flex;align-items:center;justify-content:center;align-self:flex-start;flex:0 0 36px;width:36px;height:36px;min-height:36px;padding:8px;margin:0}
+.personal-library .collection-heading{flex-direction:row;align-items:center;justify-content:flex-start;gap:8px}
+.collection-heading>h3{flex:1;min-width:0}
+.collection-heading>.personal-actions{flex-wrap:nowrap;max-width:100%;overflow-x:auto}
+/* Keep page chrome compact without changing the established content layout. */
+.music-library>.section-title{margin:12px 0 10px}
+.music-library>.library-tabs{margin-bottom:10px}
+.music-library>.library-toolbar{margin:10px 0}
+.personal-library .personal-heading{margin:12px 0}
+.personal-library .personal-create{margin:12px 0;gap:8px}
+.audiobook-library .book-heading{margin:12px 0;gap:16px}
+.audiobook-library>.library-caption{margin:8px 0}
+.back-to-library.library-back{margin:8px 0}
+
+.visualizer-tools>label.wake-lock-toggle{display:flex;align-items:center;gap:6px;font-size:11px;color:#bbc9b7;min-height:36px}
+.wake-lock-toggle input{accent-color:#c6ee9b;width:16px;height:16px;flex-shrink:0}
+.download-control>.track-download{display:inline-flex;align-items:center;justify-content:center;min-width:36px;min-height:36px;padding:8px;border:1px solid #58714e;border-radius:0;background:#13251b;color:#d2efb0;cursor:pointer}
+.download-control>.track-download:hover:not(:disabled){background:#233426;border-color:#a0bc7d}
+.download-control>.track-download:disabled{opacity:.5;cursor:default}
+.download-control>.track-download svg{width:18px;height:18px}
+.album-collection-actions{display:flex;align-items:center;gap:8px;margin-top:8px}
+.music-library .album-collection-actions>.album-queue-menu{margin:0;min-height:36px;padding:8px 10px}
+/* Disabled actions retain Freeqify's palette instead of browser gray. */
+:root button:disabled,:root .download-control>.track-download:disabled{background-color:#0c1510;color:#73816f;border-color:#26372b;opacity:1;cursor:default}
+
+.listening-room.player-immersive .visualizer-tools>label.wake-lock-toggle{font-size:11px}
+
+@media(max-width:760px){.library-toolbar>.album-sort{flex:0 1 120px;min-width:0}.library-toolbar>.album-sort>span{display:none}.library-toolbar>.album-sort select{width:100%;min-width:0}.library-toolbar:has(.album-sort) .library-maintenance{flex:2}}

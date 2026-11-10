@@ -33,7 +33,7 @@ it('upgrades a Phase 2 database additively and restores playback after restart',
   const original = store.db.prepare('SELECT * FROM users').get(); expect(original?.username).toBe('existing-name');
   store.db.prepare('INSERT INTO playback_state VALUES (?,?,?)').run('existing-user', JSON.stringify(emptyPlayback()), 1); store.close();
   store = new AuthStore(file, readConfig({}).auth);
-  try { expect(store.db.prepare('SELECT * FROM users').get()).toEqual(original); expect(JSON.parse(String(store.db.prepare('SELECT state FROM playback_state').get()?.state))).toEqual(emptyPlayback()); expect(store.db.prepare('PRAGMA user_version').get()?.user_version).toBe(13); } finally { store.close(); }
+  try { expect(store.db.prepare('SELECT * FROM users').get()).toEqual(original); expect(JSON.parse(String(store.db.prepare('SELECT state FROM playback_state').get()?.state))).toEqual(emptyPlayback()); expect(store.db.prepare('PRAGMA user_version').get()?.user_version).toBe(14); } finally { store.close(); }
 });
 it('authorization polling does not extend idle sessions', async () => {
   let now = Date.now(); const config = readConfig({SESSION_IDLE_MINUTES:'30'}); const store = new AuthStore(':memory:', config.auth, () => now);

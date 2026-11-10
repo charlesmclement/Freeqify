@@ -17,6 +17,8 @@ Navidrome catalog. Bring your own legally obtained music; no music is bundled.
 - Personal artwork choices and optional administrator cover search.
 - Separate audiobook catalog, chapters, private bookmarks and resume, playback speed, sleep timer, and optional device downloads.
 - Optional local Whisper recognition of spoken chapter headings, with review before saving.
+- Synchronized audiobook transcripts using local Whisper, with private passage caching.
+- Lyrics in the visualizer Mode selector and optional screen wake lock in immersive mode.
 
 This is an actively developed project. There is no public demo or hosted service.
 Publishing the source does not expose an existing installation.
@@ -116,7 +118,7 @@ or closing either view preserves the current audio source and listening position
 
 ### Optional free synchronized lyrics
 
-Set `LYRICS_ENABLED=true` on the server to enable LRCLIB in **Now Playing → Lyrics**.
+Set `LYRICS_ENABLED=true` on the server to enable LRCLIB in **Now Playing → Mode → Lyrics**.
 No paid plan, account, API key or AI transcription is needed. Requests use only the
 song title, artist, album and duration; audio stays on your music server. Freeqify
 checks the returned identity and duration before showing lyrics. Songs without a
@@ -128,3 +130,28 @@ The current line follows playback; tap a line to seek. Scroll to browse and use
 current song without modifying its file or saved metadata. Lyrics are online only.
 The server keeps a bounded temporary cache, honors provider retry delays, and
 never scans the entire library. See [LRCLIB documentation](https://lrclib.net/docs).
+
+### Audiobook Lyrics with local Whisper
+
+Audiobook Now Playing → Mode → Lyrics displays an automatic synchronized transcript.
+Server transcription is off by default. Enable `AUDIOBOOKS_TRANSCRIPTS_ENABLED=true`
+only on a suitable host. It uses the existing optional `AUDIOBOOKS_SPEECH_PYTHON` and
+`AUDIOBOOKS_SPEECH_MODEL` configuration with an already installed local Whisper model.
+No paid API, cloud transcription or model download is used. Opening the panel reads
+30-second passages around playback and prepares one following passage. Recognition
+can take longer than playback on slower CPUs. Tap a line to seek; scroll manually
+and select Follow transcript to resume following. Words and timing can contain errors.
+
+Closing Lyrics cancels pending work. Recognition uses the same single speech-worker
+budget as spoken headings, with a 90-second deadline and six uncached requests per
+minute per account. Migration 14 adds a private derived-text cache, limited to 4,096
+passages per account and existing storage quotas. It preserves accounts, book state,
+and music; deleting a saved book removes its transcripts. No original audio changes
+or offline transcript downloads occur. Existing server speech configuration is required;
+without it the panel explains that local Whisper must be enabled.
+
+Immersive mode offers an optional **Keep screen awake** checkbox beside Mode.
+It defaults off, releases on exit or hiding, and attempts reacquisition on return.
+Browser or OS restrictions may prevent the lock.
+
+See [current handoff](docs/current-handoff.md) for validation and upgrade notes.

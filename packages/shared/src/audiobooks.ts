@@ -10,3 +10,6 @@ export interface BookSummary {
 export interface Audiobook extends BookSummary {parts:Track[];chapters:BookChapter[];bookmarks:BookBookmark[];chapterScan?:{complete:boolean;message:string}}
 /** Source books are visible before opening; personal state belongs only to the current listener. */
 export interface BookCatalogEntry extends Album {book:BookSummary|null}
+
+/** Private, locally recognized text for one bounded passage of a book part. */
+export interface BookTranscript {status:'ready'|'disabled';provider:'Whisper';partId:string;start:number;end:number;lines:{time:number;text:string}[]}

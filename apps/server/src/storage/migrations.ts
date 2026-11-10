@@ -172,7 +172,16 @@ CREATE TABLE audiobooks (
  UNIQUE(user_id,album_id)
 ) STRICT;
 CREATE INDEX audiobooks_owner ON audiobooks(user_id,updated_at DESC,id);
-`+usageTriggers('audiobooks','length(CAST(ROW.payload AS BLOB))+512')}];
+`+usageTriggers('audiobooks','length(CAST(ROW.payload AS BLOB))+512')}, {version:14,sql:`
+CREATE TABLE book_transcripts (
+ user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ book_id TEXT NOT NULL REFERENCES audiobooks(id) ON DELETE CASCADE,
+ part_id TEXT NOT NULL,source_key TEXT NOT NULL,start INTEGER NOT NULL CHECK(start>=0),
+ payload TEXT NOT NULL CHECK(length(CAST(payload AS BLOB))<=65536),created_at INTEGER NOT NULL,
+ UNIQUE(user_id,book_id,part_id,source_key,start)
+) STRICT;
+CREATE INDEX book_transcripts_owner ON book_transcripts(user_id,created_at);
+`+usageTriggers('book_transcripts','length(CAST(ROW.payload AS BLOB))+256')}];
 /** Trusted migration identifiers/expressions only; never caller supplied. */
 function usageTriggers(table:string,expression:string){
  const value=(row:string)=>expression.replaceAll('ROW.',row+'.');

@@ -297,7 +297,7 @@ it('keeps shared covers after restart without deleting personal preferences',asy
  expect((await first.send('/shared',{mode:'select',token})).statusCode).toBe(200);await first.stop();
  const second=await interactiveFixture('/',database);expect((await second.send('',undefined,1)).rawPayload).toEqual(searchImage);
  expect(second.record('bob')).toMatchObject({mode:'none'});
- expect(second.auth.db.prepare('PRAGMA user_version').get()?.user_version).toBe(13);
+ expect(second.auth.db.prepare('PRAGMA user_version').get()?.user_version).toBe(14);
 });
 it('rolls back a shared cover when the global collection limit is reached',async()=>{
  const f=await interactiveFixture();

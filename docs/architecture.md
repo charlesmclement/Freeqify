@@ -1155,9 +1155,47 @@ responses cap at 256 KiB, lookups have an eight-second deadline, and an in-memor
 failures are not cached; 429 Retry-After sets a shared cooldown with jitter.
 No lyrics are persisted in SQLite, device downloads or the PWA cache.
 
-Now Playing conditionally replaces its visualization with a lyrics panel while
+The Now Playing visualizer Mode selector offers Lyrics and conditionally replaces its visualization with a lyrics panel while
 retaining the existing audio element, controls, queue and book behavior. Highlighting
 uses actual playback time, including pauses and seeks; manual scrolling suspends
 auto-follow until requested. Timing adjustment is ephemeral. Track changes abort
 old requests and unmount stale text; logout removes the player. Failure, disabled,
 missing, instrumental and untimed states are explicit.
+
+## Private audiobook transcripts
+
+Authenticated, CSRF-protected POST `/api/audiobooks/:id/transcript` accepts only a
+saved owner book ID, a part ID belonging to that book, and finite playback position.
+The server selects a canonical 30-second window, validates known part duration,
+and uses the existing local PCM/Whisper reader. The loopback capability bridge,
+48 MiB source budget, bounded PCM/stdout, fixed decoder arguments, secret-free child
+environment, single shared speech admission, six uncached windows/minute/user,
+90-second deadline, disconnect cancellation and periodic active-session checks apply.
+After recognition the server rechecks owner access and part metadata before saving.
+Only plausible finite ordered timestamps and sufficiently confident speech survive;
+silence and uncertain recognition produce an empty passage, never guessed prose.
+
+Additive migration 14 stores text under authenticated user/book/part/source metadata
+fingerprint/window, with foreign-key deletion and personal usage accounting. Cache
+writes are transactional, capped at 4,096 passages/user and normal storage quotas.
+Ordinary administrator access cannot read another owner's transcripts. Transcripts
+are no-store responses and never enter offline downloads or service-worker caches.
+Model files must already exist locally; the server neither downloads a model nor
+calls an external recognition API. Original media is read only and never rewritten.
+
+Now Playing offers Lyrics for both music and books in the existing visualizer Mode
+selector. Book text follows part-relative media time, keeps one audio owner, supports
+line seeking and scroll/follow, cancels on closing/changing part, and prefetches one
+following passage. Immersive mode supports both kinds of text and the optional visible
+screen wake lock. CPU recognition may lag real-time playback; unavailable service,
+missing duration, offline mode, silence and retryable failures are shown explicitly.
+
+Immersive text uses the existing audio owner and optional screen wake lock,
+released on hiding/exit and reacquired on return when selected. Back navigation
+uses compact left arrows, library toolbar actions share a row, and the large Home
+visualizer is scoped to the Home overview rather than detail views.
+
+Server recognition is independently gated by `AUDIOBOOKS_TRANSCRIPTS_ENABLED`,
+default false. Disabled requests perform no decoding or inference. Spoken-heading
+settings remain independent. Future native clients may recognize locally and sync
+private text through the server; no native client has been implemented yet.

@@ -13,11 +13,12 @@ import {PlaybackSurface} from './PlaybackSurface.js';
 import { AccountProvider, ProfileMenu, SignInPanel, useAccount } from './Authentication.js';
 import { Administration } from './Administration.js';
 import { useEffect, useState } from 'react';
-import { Library, libraryViews, type LibraryView } from './Library.js';
+import { Library, isLibrarySelection, libraryViews, type LibraryView } from './Library.js';
 import { APP_NAME, TAGLINE, type HealthResponse } from '@freeqify/shared';
 export function App() { return <AccountProvider><Freeqify /></AccountProvider>; }
 function Freeqify() {
   const account = useAccount();
+  const [librarySelection]=useNavigationState('selection',null,isLibrarySelection);
   const [tools,setTools]=useNavigationState('tools',false,isBoolean);
   const [more,setMore]=useNavigationState('more',false,isBoolean);
   const [admin,setAdmin]=useNavigationState('admin',false,isBoolean);
@@ -42,7 +43,7 @@ function Freeqify() {
   function openAdministration(){setTools(false);setMore(false);setAdmin(true);scrollTop();}
   const signedIn=Boolean(account.state?.user);
   useEffect(()=>{if(account.offline){if(view!=='Audiobooks')setView('Downloaded');setTools(false);setMore(false);setAdmin(false);}},[account.offline,view,setView,setTools,setMore,setAdmin]);
-  return <BookDownloadsProvider><OfflineProvider><PersonalProvider><Playback><div className={`shell ${signedIn?'signed-in':''} ${tools?'has-tools':''} ${view==='Overview'&&!admin&&!more&&!tools?'is-home':'is-browsing'}`}>
+  return <BookDownloadsProvider><OfflineProvider><PersonalProvider><Playback><div className={`shell ${signedIn?'signed-in':''} ${tools?'has-tools':''} ${view==='Overview'&&!librarySelection&&!admin&&!more&&!tools?'is-home':'is-browsing'}`}>
     <aside className="sidebar" aria-label="Application information">
       <a className="brand" href={import.meta.env.BASE_URL} onClick={event=>{if(signedIn){event.preventDefault();navigate('Overview');}}}><span className="brand-mark" aria-hidden="true">≋</span>{APP_NAME}<span className="brand-dot">.</span></a>
       <div className="side-label">YOUR SPACE</div>
@@ -52,11 +53,11 @@ function Freeqify() {
     </aside>
     <main id="main"><header className="app-header"><span className="header-caption">YOUR PERSONAL MUSIC SPACE</span><div className="header-account">{signedIn&&<button className="mobile-search" disabled={account.offline} aria-label="Search your music" onClick={()=>navigate('Search')}><Icon name="search"/></button>}<button className="offline-shortcut" aria-label="Downloaded music" title="Downloaded music" onClick={()=>navigate('Downloaded')}><Icon name="download"/></button><span className="phase-tag">PHASE 4</span><ProfileMenu openAdmin={openAdministration} /></div></header>
       {account.offline&&<p className="offline-banner" role="status">Device library · server unavailable <button onClick={account.refresh}>Reconnect</button></p>}
-      <PlaybackSurface home={signedIn&&view==='Overview'&&!tools&&!more&&!admin}/>
+      <PlaybackSurface home={signedIn&&view==='Overview'&&!librarySelection&&!tools&&!more&&!admin}/>
 
 
       {account.state?.user ? <>
-        {account.offline?(view==='Audiobooks'?<Audiobooks/>:<OfflineView/>):admin && account.state.user.role === 'admin' ? <><button className="back-to-library" onClick={() => setAdmin(false)}>← Back to library</button><Administration /></> : <>{view==='Audiobooks'&&!tools&&!more?<Audiobooks/>:view==='Downloaded'&&!tools&&!more?<OfflineView/>:tools?<PlaylistImport key={account.state.user.id} onMore={()=>{setTools(false);setMore(true);}}/>:more?<MoreView onNavigate={navigate} openAdmin={openAdministration}/>:<Library key={`${account.state.user.id}:${view}`} view={view} onView={navigate}/>}</>}
+        {account.offline?(view==='Audiobooks'?<Audiobooks/>:<OfflineView/>):admin && account.state.user.role === 'admin' ? <><button className="back-to-library library-back" aria-label="Back to library" title="Back to library" onClick={() => setAdmin(false)}><Icon name="back"/></button><Administration /></> : <>{view==='Audiobooks'&&!tools&&!more?<Audiobooks/>:view==='Downloaded'&&!tools&&!more?<OfflineView/>:tools?<PlaylistImport key={account.state.user.id} onMore={()=>{setTools(false);setMore(true);}}/>:more?<MoreView onNavigate={navigate} openAdmin={openAdministration}/>:<Library key={`${account.state.user.id}:${view}`} view={view} onView={navigate}/>}</>}
       </> : <SignInPanel /> }
       <section className="overview" aria-labelledby="overview-title"><div className="section-title"><h2 id="overview-title">A little closer to your collection</h2><span>BUILT TO BE YOURS</span></div><div className="cards">
         <article><span className="card-icon" aria-hidden="true">⌘</span><h3>Your server, your space</h3><p>Designed for your computer, home server, or compatible Linux host.</p><span className="card-meta">NATIVE LINUX FIRST</span></article>

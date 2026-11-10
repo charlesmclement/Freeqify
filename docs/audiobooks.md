@@ -85,3 +85,16 @@ for speed, sleep, bookmarks, volume and returning to the saved music queue. Open
 or closing either view preserves the current audio source and listening position.
 
 If a book stream fails, Play retries the source at the retained position. Retrying is explicit and does not mark the book finished.
+
+## Synchronized transcripts
+
+Open Now Playing, choose Mode → Lyrics, and read locally generated Whisper text.
+The existing optional speech Python environment and model configuration also
+supply the reader for these transcripts. Server recognition also requires explicit
+`AUDIOBOOKS_TRANSCRIPTS_ENABLED=true` and defaults off. Recognition covers 30-second passages and prepares one
+next passage; it may lag on slow CPUs. Text is private to the listener and cached
+under existing storage quotas through additive migration 14. Tap a line to seek;
+manual scrolling pauses following. Words and timing may contain recognition errors.
+No audio is uploaded, rewritten or saved by the recognizer. A local model must
+already exist; no paid API or model download is required. Closing the panel cancels
+pending work. Immersive mode supports transcripts and optional Keep screen awake.

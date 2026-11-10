@@ -1,3 +1,5 @@
+import {BookTranscriptPanel} from './BookTranscriptPanel.js';
+import {useScreenWakeLock} from './useScreenWakeLock.js';
 import {LyricsPanel} from './LyricsPanel.js';
 import {useBookDownloads} from './BookDownloadsContext.js';
 import {AudiobookContext} from './AudiobookContext.js';
@@ -120,9 +122,11 @@ function Player({ children }: { children: ReactNode }) {
     if(mainSurface&&!immersive){document.getElementById('main')?.scrollTo?.({top:0});dialog.querySelector<HTMLButtonElement>('[aria-label="Close Now Playing"]')?.focus({preventScroll:true});}
     return ()=>{dialog.close?.();dialog.removeAttribute('open');if(modal)document.body.style.overflow=overflow;};
   },[fullOpen,immersive,mainSurface]);
+  const [keepAwake,setKeepAwake]=useState(false);
+  const wakeLockError=useScreenWakeLock(fullOpen&&immersive&&keepAwake);
   // Activity only updates React when chrome visibility changes, never on animation frames.
   useEffect(()=>{
-    if(!fullOpen||!immersive||!mediaPlaying||queueOpen||(lyricsOpen&&!bookActive))return;
+    if(!fullOpen||!immersive||!mediaPlaying||queueOpen||lyricsOpen)return;
     const dialog=fullDialog.current;if(!dialog)return;let timer:ReturnType<typeof setTimeout>;
     const schedule=()=>{clearTimeout(timer);timer=setTimeout(()=>{
       if(dialog.querySelector('details[open]')||dialog.querySelector('button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible')){schedule();return;}
@@ -374,9 +378,10 @@ function Player({ children }: { children: ReactNode }) {
       if(event.key.toLowerCase()==='f'){event.preventDefault();toggleImmersive();}
       if(event.key==='ArrowLeft'||event.key==='ArrowRight'){const seconds=event.key==='ArrowRight'?5:-5;if(bookActive){event.preventDefault();books.skip(seconds);}else if(seekable&&audio.current){event.preventDefault();audio.current.currentTime=Math.max(0,Math.min(length,audio.current.currentTime+seconds));}}
     }}>
-      <div className="now-playing-header"><button aria-label="Close Now Playing" onClick={closeNowPlaying}><Icon name="back"/></button><span><span className="brand-mark">≋</span> Freeqify<span className="brand-dot">.</span><small>THE LISTENING ROOM</small></span><div className="listening-header-actions">{!bookActive&&current&&<button aria-label="Lyrics" aria-pressed={lyricsOpen} onClick={()=>{setLyricsOpen(value=>!value);setChromeIdle(false);}}>Lyrics</button>}<button className="immersive-toggle" aria-pressed={immersive} onClick={toggleImmersive}>{immersive?'Exit immersive view':'Immersive view'} <span aria-hidden="true">{immersive?'↙':'↗'}</span></button><button aria-label={bookActive?'Show book chapters':'Show playback queue'} aria-expanded={queueOpen} onClick={()=>{setChromeIdle(false);setQueueOpen(!queueOpen);}}><Icon name={bookActive?'book':'queue'}/></button></div></div>
+      <div className="now-playing-header"><button aria-label="Close Now Playing" onClick={closeNowPlaying}><Icon name="back"/></button><span><span className="brand-mark">≋</span> Freeqify<span className="brand-dot">.</span><small>THE LISTENING ROOM</small></span><div className="listening-header-actions"><button className="immersive-toggle" aria-pressed={immersive} onClick={toggleImmersive}>{immersive?'Exit immersive view':'Immersive view'} <span aria-hidden="true">{immersive?'↙':'↗'}</span></button><button aria-label={bookActive?'Show book chapters':'Show playback queue'} aria-expanded={queueOpen} onClick={()=>{setChromeIdle(false);setQueueOpen(!queueOpen);}}><Icon name={bookActive?'book':'queue'}/></button></div></div>
       <div className="now-playing-label"><span className="eyebrow">ON YOUR FREQUENCY</span><h2 id="now-playing-title">Now Playing</h2></div>
-      {fullOpen&&(lyricsOpen&&!bookActive&&current?<LyricsPanel key={`${current.trackId}:${account.offline}`} trackId={current.trackId} position={state.position} duration={length} seekable={seekable&&length>0} offline={account.offline} onSeek={position=>{if(audio.current&&seekable){audio.current.currentTime=position;update({...latest.current,position});}}}/>:<MusicVisualizer audio={audio} active={fullOpen} playing={mediaPlaying} user={account.state!.user!.id} expanded={immersive} onExpand={toggleImmersive}/>)}
+      {wakeLockError&&<p className="wake-lock-status" role="status">{wakeLockError}</p>}
+      {fullOpen&&<MusicVisualizer audio={audio} active={fullOpen} playing={mediaPlaying} user={account.state!.user!.id} expanded={immersive} onExpand={toggleImmersive} keepAwake={keepAwake} onKeepAwakeChange={value=>{setKeepAwake(value);setChromeIdle(false);}} lyricsOpen={lyricsOpen&&(bookActive||!!current)} onLyricsChange={open=>{setLyricsOpen(open);setChromeIdle(false);}} lyrics={book?<BookTranscriptPanel key={`${book.id}:${bookState.partId}:${account.offline}`} bookId={book.id} partId={bookState.partId} position={bookState.position} duration={book.parts.find(p=>p.id===bookState.partId)?.duration??0} offline={account.offline} seekable={bookState.ready} onSeek={position=>books.seek(bookState.partId,position)}/>:current?<LyricsPanel key={`${current.trackId}:${account.offline}`} trackId={current.trackId} position={state.position} duration={length} seekable={seekable&&length>0} offline={account.offline} onSeek={position=>{if(audio.current&&seekable){audio.current.currentTime=position;update({...latest.current,position});}}}/>:undefined}/>}
       <div className="now-playing-companion">
       <div className="now-playing-art"><AlbumArtwork kind={bookActive?'book':'album'} albumId={book?.albumId??track?.albumId??null} artworkId={book?book.artworkId:track?.artworkId??null} label={book?.title??track?.album??'Album'}/></div>
       <div className="now-playing-track"><div><h3>{book?.title??track?.title??'Loading track…'}</h3><p>{book?.author??track?.artist??'Loading artist…'}</p><small>{book?bookChapter?.title:track?.album}</small>{sourceIndicator()}</div>{!bookActive&&track&&<TrackActions track={track}/>}</div>
