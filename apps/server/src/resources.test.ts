@@ -34,7 +34,7 @@ it.each(['/','/freeqify/'])('canonicalizes persisted playback and rate-limits pr
 it('migrates populated schema 4 without changing credentials or records and meters existing data',async()=>{
  const {DatabaseSync}=await import('node:sqlite');const {migrations}=await import('./storage/migrations.js');const d=await mkdtemp('/tmp/freeqify-quota-migration-');const file=join(d,'db');
  try{const old=new DatabaseSync(file);for(const migration of migrations.slice(0,4))old.exec(migration.sql);old.exec("INSERT INTO users VALUES('owner','owner','synthetic-unchanged','admin','active',1); INSERT INTO personal_playlists VALUES('mix','owner','Saved',0,1,1); INSERT INTO playback_state VALUES('owner','{}',1); PRAGMA user_version=4;");old.close();
- const store=new AuthStore(file,readConfig({}).auth);try{expect(store.db.prepare('PRAGMA user_version').get()?.user_version).toBe(12);expect(store.db.prepare('SELECT password_hash FROM users').get()?.password_hash==='synthetic-unchanged').toBe(true);expect(new PersonalStore(store).playlists('owner')[0]?.name).toBe('Saved');expect(store.storageUsage('owner').user).toBeGreaterThan(0);expect(store.db.prepare('SELECT state FROM playback_state').get()?.state).toBe('{}');}finally{store.close();}
+ const store=new AuthStore(file,readConfig({}).auth);try{expect(store.db.prepare('PRAGMA user_version').get()?.user_version).toBe(13);expect(store.db.prepare('SELECT password_hash FROM users').get()?.password_hash==='synthetic-unchanged').toBe(true);expect(new PersonalStore(store).playlists('owner')[0]?.name).toBe('Saved');expect(store.storageUsage('owner').user).toBeGreaterThan(0);expect(store.db.prepare('SELECT state FROM playback_state').get()?.state).toBe('{}');}finally{store.close();}
  }finally{await rm(d,{recursive:true,force:true});}
 });
 it('rolls back growth at the free-disk reserve and still permits removal',async()=>{const d=await mkdtemp('/tmp/freeqify-disk-reserve-');const c=readConfig({});const s=new AuthStore(join(d,'db'),c.auth,Date.now,{...defaultResources,minFreeBytes:Number.MAX_SAFE_INTEGER});try{s.db.prepare("INSERT INTO users VALUES('a','a','unused','listener','active',0)").run();expect(()=>new PersonalStore(s).create('a','Mix')).toThrow('storage is low');expect(new PersonalStore(s).playlists('a')).toHaveLength(0);}finally{s.close();await rm(d,{recursive:true,force:true});}});
@@ -43,4 +43,21 @@ it('allows logout after the account request budget is exhausted',async()=>{const
 it.each(['/','/freeqify/'])('bounds playback uploads before body buffering at %s',async base=>{
  const {Readable}=await import('node:stream');const d=await mkdtemp('/tmp/freeqify-upload-limit-');await writeFile(join(d,'index.html'),`<meta content="${base}">`);const c=readConfig({BASE_PATH:base,WEB_DIST_DIR:d,MAX_CATALOG_PER_USER:'1'});const store=seeded();const session=store.createSession({id:'a',username:'a',role:'listener',status:'active',createdAt:0});const app=await createApp(c,{authStore:store});const headers={host:'localhost',cookie:`freeqify_session=${session.token}`,origin:'http://localhost','x-csrf-token':session.csrf,'content-type':'application/json'};let started=false;const upload=new Readable({read(){if(!started){started=true;this.push('{');}}});
  try{const first=app.inject({method:'POST',url:base+'api/playback',headers,payload:upload});void first.then(()=>{});await vi.waitFor(()=>expect(started).toBe(true));expect((await app.inject({url:base+'api/playback',headers})).statusCode).toBe(429);upload.push(JSON.stringify(emptyPlayback()).slice(1));upload.push(null);expect((await first).statusCode).toBe(200);expect((await app.inject({url:base+'api/playback',headers})).statusCode).toBe(200);}finally{upload.destroy();await app.close();await rm(d,{recursive:true,force:true});}
+});
+it.each(['/','/freeqify/'])('keeps navigation capacity when a cover grid fills its allowance at %s',async base=>{
+ const dir=await mkdtemp('/tmp/freeqify-cover-capacity-');await writeFile(join(dir,'index.html'),`<meta content="${base}">`);
+ const config=readConfig({BASE_PATH:base,WEB_DIST_DIR:dir,MAX_CATALOG_REQUESTS:'4',MAX_CATALOG_PER_USER:'4'}),store=seeded();
+ const sessions=['a','b'].map(id=>store.createSession({id,username:id,role:'listener',status:'active',createdAt:0}));
+ const finishes:((value:{bytes:Buffer;contentType:string})=>void)[]=[],image={bytes:Buffer.from([255,216,255]),contentType:'image/jpeg'};
+ const artwork=vi.fn(()=>new Promise<typeof image>(resolve=>finishes.push(resolve))),app=await createApp(config,{authStore:store,library:{artwork} as unknown as MusicLibrary});
+ const read=(path:string,who=0)=>app.inject({url:base+'api/'+path,headers:{host:'localhost',cookie:`freeqify_session=${sessions[who]!.token}`}});
+ const pending=[0,1,2].map(i=>read('library/artwork/image-'+i).then(r=>r));
+ try{
+  await vi.waitFor(()=>expect(artwork).toHaveBeenCalledTimes(3));
+  expect((await read('library/artwork/image-four')).statusCode).toBe(429);
+  expect((await read('library/artwork/image-four',1)).statusCode).toBe(503);
+  expect((await read('audiobooks')).statusCode).toBe(200);expect((await read('audiobooks',1)).statusCode).toBe(200);
+  finishes.forEach(f=>f(image));expect((await Promise.all(pending)).every(r=>r.statusCode===200)).toBe(true);
+  artwork.mockResolvedValue(image);expect((await read('library/artwork/image-five')).statusCode).toBe(200);
+ }finally{finishes.forEach(f=>f(image));await Promise.all(pending);await app.close();await rm(dir,{recursive:true,force:true});}
 });

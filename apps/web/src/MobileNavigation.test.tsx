@@ -18,6 +18,8 @@ function setup(role='listener'){
    :path==='imports/'?{items:[]}:path==='imports/lidarr'?{configured:false,connected:false,canRequest:false,message:'Not configured'}
    :path.startsWith('personal/history')?{items:[{id:'event',source:'local',trackId:'song',track,available:true,playedAt:1}]}
    :path==='library/overview'?{tracks:17,albums:3,artists:2,scanning:false}
+   :path.startsWith('audiobooks/catalog')?{items:[{...album,id:'book-source',title:'Another Book',book:null}],nextOffset:null}
+   :path.startsWith('audiobooks?')?{items:[],nextOffset:null}
    :path.startsWith('admin/')?{items:[]}
    :path==='library/artists'?{items:[{id:'artist',name:'Catalog Artist',albumCount:1,artworkId:null}]}
    :path.startsWith('library/albums?')?{items:[album],nextOffset:null}
@@ -80,4 +82,16 @@ it('opens a real album from Jump back in and returns to the Home dashboard',asyn
  expect(screen.getByRole('button',{name:'Play album'})).toBeEnabled();
  fireEvent.click(screen.getByRole('button',{name:'← Back to overview'}));
  expect(await screen.findByText('17')).toBeVisible();
+});
+
+it('opens the full audiobook catalog from desktop and mobile Library even after a book detail route',async()=>{
+ setup();await screen.findByText('17');
+ window.history.replaceState(null,'','/#/view=%22Albums%22&book=%22previous-book%22&bookshelf=true');
+ fireEvent.click(within(screen.getByRole('navigation',{name:'Your space'})).getByRole('button',{name:'Audiobooks'}));
+ expect(await screen.findByRole('button',{name:/Another Book.*Not started/})).toBeVisible();
+ await waitFor(()=>expect(window.location.hash).not.toContain('previous-book'));expect(window.location.hash).not.toContain('bookshelf');
+ const mobile=screen.getByRole('navigation',{name:'Mobile navigation'});
+ fireEvent.click(within(mobile).getByRole('button',{name:'Library'}));
+ fireEvent.click(within(await screen.findByRole('navigation',{name:'Music library'})).getByRole('button',{name:'Books'}));
+ expect(await screen.findByRole('button',{name:/Another Book.*Not started/})).toBeVisible();
 });

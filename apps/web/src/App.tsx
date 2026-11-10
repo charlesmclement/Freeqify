@@ -1,3 +1,5 @@
+import {BookDownloadsProvider} from './BookDownloadsContext.js';
+import {Audiobooks} from './Audiobooks.js';
 import {OfflineProvider} from './OfflineContext.js';
 import {OfflineView} from './OfflineView.js';
 import {useNavigationState,isBoolean,navigateParameter} from './navigation.js';
@@ -36,15 +38,15 @@ function Freeqify() {
     return () => { clearTimeout(timeout); controller.abort(); };
   }, [attempt]);
   function scrollTop(){ navigateParameter('fullOpen',false,false);navigateParameter('immersive',false,false);document.getElementById('main')?.scrollTo?.({top:0}); window.scrollTo?.({top:0}); }
-  function navigate(next:LibraryView){setTools(false);setMore(false);setAdmin(false);setView(next);for(const key of ['selection','playlist','query','offset'])navigateParameter(key,null,null);scrollTop();}
+  function navigate(next:LibraryView){setTools(false);setMore(false);setAdmin(false);setView(next);for(const key of ['selection','playlist','query','offset','book','bookshelf'])navigateParameter(key,null,null);scrollTop();}
   function openAdministration(){setTools(false);setMore(false);setAdmin(true);scrollTop();}
   const signedIn=Boolean(account.state?.user);
-  useEffect(()=>{if(account.offline){setView('Downloaded');setTools(false);setMore(false);setAdmin(false);}},[account.offline,setView,setTools,setMore,setAdmin]);
-  return <OfflineProvider><PersonalProvider><Playback><div className={`shell ${signedIn?'signed-in':''} ${tools?'has-tools':''} ${view==='Overview'&&!admin&&!more&&!tools?'is-home':'is-browsing'}`}>
+  useEffect(()=>{if(account.offline){if(view!=='Audiobooks')setView('Downloaded');setTools(false);setMore(false);setAdmin(false);}},[account.offline,view,setView,setTools,setMore,setAdmin]);
+  return <BookDownloadsProvider><OfflineProvider><PersonalProvider><Playback><div className={`shell ${signedIn?'signed-in':''} ${tools?'has-tools':''} ${view==='Overview'&&!admin&&!more&&!tools?'is-home':'is-browsing'}`}>
     <aside className="sidebar" aria-label="Application information">
       <a className="brand" href={import.meta.env.BASE_URL} onClick={event=>{if(signedIn){event.preventDefault();navigate('Overview');}}}><span className="brand-mark" aria-hidden="true">≋</span>{APP_NAME}<span className="brand-dot">.</span></a>
       <div className="side-label">YOUR SPACE</div>
-      <nav className="sidebar-nav" aria-label="Your space">{libraryViews.map(item => <button key={item} disabled={!account.state?.user||(account.offline&&item!=='Downloaded')} className={!tools&&view === item ? 'nav-current' : 'nav-item'} aria-current={!tools&&view === item ? 'page' : undefined} onClick={() => { navigate(item); document.getElementById('library')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }); }}><span aria-hidden="true">{{Overview:'⌂',Playlists:'☷',Favorites:'♡','Recently played':'◷',Artists:'◎',Albums:'▣',Tracks:'♫',Search:'⌕',Downloaded:'↓'}[item]}</span>{item}</button>)}<button disabled={!signedIn||account.offline} className={tools?'nav-current':'nav-item'} aria-current={tools?'page':undefined} onClick={()=>{setTools(true);setMore(false);setAdmin(false);scrollTop();}}><Icon name="tools"/>Tools</button></nav>
+      <nav className="sidebar-nav" aria-label="Your space">{libraryViews.map(item => <button key={item} disabled={!account.state?.user||(account.offline&&item!=='Downloaded'&&item!=='Audiobooks')} className={!tools&&view === item ? 'nav-current' : 'nav-item'} aria-current={!tools&&view === item ? 'page' : undefined} onClick={() => { navigate(item); document.getElementById('library')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }); }}><span aria-hidden="true">{item==='Audiobooks'?<Icon name="book"/>:{Overview:'⌂',Playlists:'☷',Favorites:'♡','Recently played':'◷',Artists:'◎',Albums:'▣',Tracks:'♫',Search:'⌕',Downloaded:'↓',Audiobooks:'▤'}[item]}</span>{item}</button>)}<button disabled={!signedIn||account.offline} className={tools?'nav-current':'nav-item'} aria-current={tools?'page':undefined} onClick={()=>{setTools(true);setMore(false);setAdmin(false);scrollTop();}}><Icon name="tools"/>Tools</button></nav>
       <div className="sidebar-note"><span className="small-wave" aria-hidden="true">▂ ▅ █ ▃ ▆</span><strong>Made for your music.</strong><p>Open source. Self hosted.<br />Always on your frequency.</p></div>
       <span className="version">FOUNDATION · v0.1.0</span>
     </aside>
@@ -54,7 +56,7 @@ function Freeqify() {
 
 
       {account.state?.user ? <>
-        {account.offline?<OfflineView/>:admin && account.state.user.role === 'admin' ? <><button className="back-to-library" onClick={() => setAdmin(false)}>← Back to library</button><Administration /></> : <>{view==='Downloaded'&&!tools&&!more?<OfflineView/>:tools?<PlaylistImport key={account.state.user.id} onMore={()=>{setTools(false);setMore(true);}}/>:more?<MoreView onNavigate={navigate} openAdmin={openAdministration}/>:<Library key={`${account.state.user.id}:${view}`} view={view} onView={navigate}/>}</>}
+        {account.offline?(view==='Audiobooks'?<Audiobooks/>:<OfflineView/>):admin && account.state.user.role === 'admin' ? <><button className="back-to-library" onClick={() => setAdmin(false)}>← Back to library</button><Administration /></> : <>{view==='Audiobooks'&&!tools&&!more?<Audiobooks/>:view==='Downloaded'&&!tools&&!more?<OfflineView/>:tools?<PlaylistImport key={account.state.user.id} onMore={()=>{setTools(false);setMore(true);}}/>:more?<MoreView onNavigate={navigate} openAdmin={openAdministration}/>:<Library key={`${account.state.user.id}:${view}`} view={view} onView={navigate}/>}</>}
       </> : <SignInPanel /> }
       <section className="overview" aria-labelledby="overview-title"><div className="section-title"><h2 id="overview-title">A little closer to your collection</h2><span>BUILT TO BE YOURS</span></div><div className="cards">
         <article><span className="card-icon" aria-hidden="true">⌘</span><h3>Your server, your space</h3><p>Designed for your computer, home server, or compatible Linux host.</p><span className="card-meta">NATIVE LINUX FIRST</span></article>
@@ -66,5 +68,5 @@ function Freeqify() {
       <footer><span>{TAGLINE}</span><span>FREE & OPEN SOURCE <span aria-hidden="true">↗</span></span></footer>
     </main>
     {signedIn&&<MobileNavigation offline={account.offline} tools={tools} onTools={()=>{setTools(true);setMore(false);setAdmin(false);scrollTop();}} view={view} more={more||admin} onNavigate={navigate} onMore={()=>{setAdmin(false);setMore(true);scrollTop();}}/>}
-  </div></Playback></PersonalProvider></OfflineProvider>;
+  </div></Playback></PersonalProvider></OfflineProvider></BookDownloadsProvider>;
 }

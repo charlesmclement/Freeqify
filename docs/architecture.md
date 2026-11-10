@@ -149,7 +149,8 @@ last check and insert are atomic across processes. There is no HTTP admin-setup 
 - Sessions: random 256-bit opaque cookie token; only its hash stored. Anonymous
   bootstrap sessions last at most 20 minutes for login CSRF protection. Successful
   login/registration replaces that session and rotates the cookie. User sessions have
-  configurable absolute/idle expiry, capped active-session count, and survive restart.
+  configurable absolute/idle expiry (default and maximum 720 hours / 43,200 idle minutes), capped
+  active-session count, and survive restart. Idle renewal is capped by absolute expiry.
   Requests check current account status/role in SQLite. Disabling a listener revokes
   all sessions atomically; session-only revocation is also supported.
 - CSRF: SHA-256 domain-separated derivation from the random session token is returned
@@ -953,8 +954,179 @@ matching transfer. Shared removal is confirmed with its selection owners. Releas
 only one reference remains available separately. Online AlbumArtwork uses live
 server cover resolution; only device-only playback uses the saved cover.
 
+## Audiobooks (Navidrome source)
+
+Audiobooks have a separate domain and UI. A private Freeqify book snapshots an
+explicitly selected Navidrome album's ordered files, with an independent ordered
+chapter list. File boundaries are labeled parts; manually named chapter markers
+are positions within those parts. Additional albums can be appended as volumes,
+and part order can be corrected without rewriting source tags. The first album
+remains the artwork reference. Artist/title initially populate editable author/title
+fields; narrator and series are explicit optional metadata.
+
+The intended source is the operator's `files/Audiobooks` folder registered as a
+separate read-only Navidrome library. `getMusicFolders` resolves the exact
+server-configured `AUDIOBOOKS_LIBRARY_NAME` (default `Audiobooks`) or the explicit
+`AUDIOBOOKS_MUSIC_FOLDER_ID` override. Zero/multiple matches fail closed.
+`GET /api/audiobooks/catalog` browses/searches with that `musicFolderId`; browser
+folder/path overrides are rejected. Since standard `getAlbum` has no folder filter,
+book creation/appending checks the ID against scoped `getAlbumList2` enumeration
+before reading its parts. Enumeration is capped at 10,000 albums and the existing
+catalog deadline. Music browse/search/track enumeration and artist lists use the
+remaining accessible music library's `musicFolderId`; multiple candidates require
+server-only `NAVIDROME_MUSIC_FOLDER_ID`. An explicit music selection cannot select
+the audiobook source. With no selected/named audiobook source and no explicit book
+ID, existing music-only installations retain unscoped browsing. Missing explicit
+book IDs and ambiguous source selection fail closed; a books-only service account
+has an empty music catalog. Folder discovery is cached for 15 seconds and invalidated
+on scan requests/status checks. Artist details filter their albums using a scoped,
+bounded (10,000 albums) music membership cache; overview track counts sum music
+album counts instead of Navidrome's global scan count. Generic album/track metadata
+and streaming remain shared for book media, artwork and existing saved references.
+Library removals and catalog admission also wrap the audiobook adapter methods.
+
+The online Audiobooks landing view displays the source catalog directly. Each page
+joins the current listener's saved summary by album ID; catalog GETs create nothing.
+Opening an existing book reuses its ID, resume position and notes. Opening a new book
+uses the existing authenticated/CSRF-protected, idempotent creation endpoint. The
+separate My bookshelf view retains private status filters and missing-source books;
+offline mode shows the device shelf. Selecting Books in desktop/mobile navigation
+clears previous detail/shelf routing and returns to All books. Catalog GETs retry
+429/502 failures at most twice with cancellable delays (at least five seconds for
+busy responses), then expose an explicit Retry books control. Mutations are never
+replayed by this loading logic; configuration errors remain immediate. Artwork
+requests use a smaller admission allowance so cover grids leave one global and
+one per-user catalog slot for navigation and private controls where configured
+capacity exceeds one. Total request budgets, authentication and rate limits remain
+in force; completion, cancellation and rejected admission release both allowances.
+
+Migration 13 appends an owner-indexed `audiobooks` table with a bounded JSON snapshot
+and quota-accounting triggers. All queries derive the owner from an active session,
+including administrator requests. Private bookmarks, progress and metadata are not
+exposed through administrative account APIs. Snapshots retain source IDs when media
+is missing. Limits are 200 books/account, 5,000 parts/book, 6,000 part/chapter markers,
+500 bookmarks/book, 4 MiB/book payload, and the existing personal/global quotas.
+Lists return 48 summaries without part/marker arrays; chapter and bookmark UI lists
+render 48 rows per page. Mutations are transactional, same-origin and CSRF-protected;
+authentication is rechecked after upstream lookup and before serialization.
+
+Every mutation carries a book revision. The server atomically rejects stale writes
+with 409. The browser serializes progress, bookmark and metadata requests using the
+latest acknowledged revision, preserving intentional rewinds. Progress is sampled
+on audio time updates (at most one periodic save per 10 seconds), flushed on pause,
+seek, part/mode changes and visibility/pagehide. Pagehide delivery is best effort;
+periodic persistence is the durable fallback. A failed/conflicting write pauses the
+book and requires reloading. This implementation does not automatically merge
+simultaneous listening sessions or promise offline progress synchronization.
+
+`BookController` uses the same persistent HTML audio element as music, with exclusive
+media events and Media Session handlers. It attaches the original same-origin
+`library/stream/:id?format=raw` URL directly. Music's SongBuffer/ProgressiveAudio and
+next-song prefetch are bypassed while a book is active. The music queue/state remain
+independent, and returning to music restores paused at its prior position. Book
+playback is excluded from music history. Speed uses playbackRate with preservesPitch;
+sleep uses wall-clock deadlines checked on time updates, an interval and visibility
+changes, plus an optional chapter boundary. Background browser suspension can delay
+execution; physical-device behavior remains platform-dependent.
+
+Existing stream admission, single-range validation, cancellation and active-session
+revocation checks apply unchanged. Neither whole-book buffers nor server audio
+archives are added. Decoding depends on the browser; original media needs upstream
+byte-range support for deep seeking. Offset-aware transcoding is a separate future
+transport, not the music player's whole-song MP3 fallback. The extensions below
+add chapter extraction and explicit original-format device copies.
+
+Design evidence: [Navidrome API compatibility](https://www.navidrome.org/docs/developers/subsonic-api/),
+[OpenSubsonic media fields](https://opensubsonic.netlify.app/docs/responses/child/),
+[upstream bookmarks](https://opensubsonic.netlify.app/docs/endpoints/createbookmark/),
+and [transcode offsets](https://opensubsonic.netlify.app/docs/extensions/transcodeoffset/).
+OpenSubsonic `cue`/`cueLine` describe lyric timing, not audiobook chapters. Upstream
+bookmarks are not used because the shared service account cannot isolate Freeqify
+listeners or provide multiple independent notes per source file.
+
+
+### Embedded audiobook chapters and device copies (November 9)
+
+On book creation, `audiobook-chapters.ts` runs configurable `ffprobe` against a random
+capability URL on an ephemeral loopback HTTP range bridge. Only the trusted book's
+current catalog ID is forwarded to Navidrome's raw stream; no upstream credentials,
+user URLs, filesystem paths or source writes are passed to the child. Allowed
+protocols/formats are restricted. Scans have two global/one per-account admission,
+30-second/48-MiB/128-request budgets, a 1-MiB JSON output limit and active-session
+rechecks. Child processes, upstream transfers and the bridge are terminated on
+completion, cancellation, shutdown or timeout. Missing tools/unreadable metadata
+leave a usable book with an incomplete-scan message. Existing books use the CSRF
+protected `detect-chapters` action. Optimistic revisions protect edits during scans;
+merging preserves manual markers and avoids duplicate positions. File boundaries
+remain parts. External CUE sidecars are not exposed through this integration.
+
+Optional spoken-heading previews use the same bounded range bridge in
+`book-audio-reader.ts`. The CSRF-protected `spoken-heading` action accepts only an
+owner's saved chapter ID, derives the part/position server-side, and performs no
+database writes. One global/one per-user operation decodes at most 45 seconds
+at a file boundary or 25 seconds at a later marker, never beyond the next marker.
+The media stage retains the 30-second/48-MiB/128-request budget. Mono 16-kHz PCM
+(at most 1,440,000 bytes) stays in memory and is piped to the repository-owned
+`read-book-heading.py`, launched with isolated Python import settings and no
+application-secret environment. Only the operator-configured Python and existing
+Whisper model path are used. No network model download, cloud service, or source
+write is involved. Recognition uses two CPU threads, a 120-CPU-second process
+limit, 90-second total wall deadline and 64-KiB output cap. The request's socket
+timeout is extended only for this operation and restored afterwards. Cancellation,
+session revocation and shutdown terminate child processes and media transfers.
+
+Recognition filters silence/unreliable segments and offers only explicit English
+heading phrases as editable suggestions; it never derives numbers from section
+indexes. Short transcripts stay in the browser's transient preview state. The UI
+reads one page (at most 48 markers) sequentially, can cancel, and requires Save
+selected names before writing. Existing edited/meaningful names are not preselected
+for replacement. The `chapter-titles` action validates up to 48 bounded names and
+their previous values, owner/revision/CSRF/quota rules, then saves atomically. A
+128-KiB request cap accommodates that bounded batch. IDs, marker positions,
+progress, part order and bookmarks remain unchanged. Optional `titleSource` in
+the existing JSON payload marks embedded versus manually accepted names, so later
+embedded scans cannot overwrite corrections, including the first part's name.
+Old records need no database migration. Offline/pending-device structural editing
+remains disabled; audio defaults to streaming.
+
+`book-downloads.ts` uses a separate IndexedDB database per BASE_PATH/account. Only
+an explicit Download book action fetches original media; no MP3 conversion or
+server archive is created. Transfers use 2-MiB durable chunks, verified lengths,
+quota checks, a 30-second transfer idle timeout, an 8-GiB/book ceiling and Web Locks for cross-tab coordination. Failed
+or cancelled transfers remove incomplete parts; retry reuses complete parts. Blob
+handles are composed for explicit device playback, with URL cleanup on source
+changes. Online playback defaults to streaming. The single persistent audio owner
+and independent music queue are preserved. A source handoff drains old progress
+writes before reading the new source's saved position.
+
+Offline changes to progress, speed, status and bookmarks are saved locally first.
+Online writes attempt an atomic `offline-sync` against the last server revision;
+reconnect offers explicit sync. Conflicts keep both versions and require a choice
+before replacing position/status/speed/bookmarks. The server validates every part,
+bookmark ID, note, time and count, accepts no book metadata or source replacement,
+and retains active-session/CSRF/owner/quota protections. Removing downloaded audio
+retains unsynced metadata. Account logout clears remembered offline identity and
+stops downloads; browser storage itself remains available to that account's next
+sign-in. Local disk/browser profile access is outside server-side account isolation.
+No private API/media responses enter the service worker cache. The public shell
+supports cold offline startup with the previously remembered account. Browser
+storage eviction, original-codec support and background restrictions still apply.
+
 ### Playback connection recovery
 
-Disconnected account state retries session verification every five seconds (one probe at a time), and on online, focus or visible-page events. Manual reconnect preserves the player until verification confirms logout or a different identity. Account fetches have a 12-second deadline; catalog fetches have a 30-second deadline. Exhausted temporary audio retries trigger connection verification, and interrupted current audio retries after verified recovery without restarting ready audio. Upstream media 401/403 responses map to 502, never to a Freeqify session-expiry signal.
+Disconnected account state retries session verification every five seconds (one probe at a time), and on online, focus or visible-page events. Manual reconnect preserves the player until verification confirms logout or a different identity. Account fetches have a 12-second deadline; catalog fetches have a 30-second deadline. Explicit audiobook creation/chapter scans allow 45 seconds, and spoken-heading previews allow 100 seconds for their bounded worker; caller cancellation remains effective. Exhausted temporary audio retries trigger connection verification, and interrupted current audio retries after verified recovery without restarting ready audio. Upstream media 401/403 responses map to 502, never to a Freeqify session-expiry signal.
 
 Authenticated sessions default to 720 hours absolute and 43,200 minutes idle (30 days); each successful login resets both through a fresh opaque session. Explicit configuration overrides these defaults, and existing sessions keep their stored expiry. Status polling still does not renew idle expiry. Logout, password changes, disabled accounts and revocation remain effective immediately.
+
+Book covers use original Navidrome artwork first. Optional Open Library matching is
+enabled by the server-side `AUDIOBOOKS_COVER_CONTACT` setting (an identifiable email
+or project URL). It sends book title and author to Open Library, requires an exact
+normalized author/title match, and caches verified image bytes in Freeqify's private data.
+When several editions match, the first matching result supplies the cover;
+its artwork may differ from the audiobook edition. Unmatched titles retain a neutral cover. Administrators can open **Edit book
+cover**, search by author/title, preview an edition and apply its cover for everyone.
+Personal uploads and choices are preserved underneath shared covers; removing the
+shared cover restores them. Original files are never modified. Covers appear in
+book lists, book details, the persistent bottom player and supported lock screens.
+The optional provider uses fixed HTTPS hosts, bounded responses and rate-limited
+requests; existing music cover lookup remains unchanged.

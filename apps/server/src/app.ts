@@ -1,3 +1,4 @@
+import {registerAudiobookRoutes} from './audiobook-routes.js';
 import {LibraryRemovals,removableLibrary} from './library-removals.js';
 import {registerImportRoutes} from './import-routes.js';
 import {boundedLibrary} from './catalog-budget.js';
@@ -45,7 +46,7 @@ export async function createApp(config: Config, options: { dev?: boolean; logger
           else if(typeof body.error==='object'&&body.error&&['CSRF_REJECTED','FORBIDDEN','ADMIN_REQUIRED'].includes(body.error.code??''))code=body.error.code!;
         }catch{/* Never log response bodies. */}
         const template=request.routeOptions.url??'';
-        const family=['auth','admin','library','personal','imports','playback'].find(name=>template===`${api}/${name}`||template.startsWith(`${api}/${name}/`))??'public';
+        const family=['auth','admin','library','personal','imports','playback','audiobooks'].find(name=>template===`${api}/${name}`||template.startsWith(`${api}/${name}/`))??'public';
         app.log.warn({event:'request-denied',reason:code,...(code==='CSRF_REJECTED'?{csrfContext:!request.authSession?'missing_session':!request.headers['x-csrf-token']?'missing_token':request.headers.origin!==(config.proxy?.origin??`${config.auth.secureCookies?'https':'http'}://${request.headers.host}`)?'origin_mismatch':'token_mismatch'}:{}),routeFamily:family,authenticated:Boolean(request.authSession?.user)},'Request denied');
       }
     }
@@ -67,21 +68,27 @@ export async function createApp(config: Config, options: { dev?: boolean; logger
   app.addHook('onClose', async () => { authStore.close(); });
   registerAuthentication(app, api, config, authStore);
   const catalogUsers=new Admission(config.resources.catalog,config.resources.catalogPerUser);
+  // Cover grids must leave capacity for navigation, private state and controls.
+  // Keep the total budgets unchanged; a configured single slot still permits art.
+  const artworkUsers=new Admission(Math.max(1,config.resources.catalog-1),Math.max(1,config.resources.catalogPerUser-1));
   const releases=new WeakMap<object,()=>void>();
   app.addHook('onRequest',async(request,reply)=>{
     const user=request.authSession?.user;if(!user)return;
     const path=request.routeOptions.url??'';
     if(!path.startsWith(`${api}/`)||path===`${api}/auth/logout`)return;
+    let releaseArtwork:(()=>void)|undefined;
     try{
       authStore.limit(`requests:${user.id}`,config.resources.requestsPerMinute,60000);
-      if((path.startsWith(`${api}/library/`)&&!path.includes('/stream/')&&!path.includes('/download/'))||path.startsWith(`${api}/personal/`)||path.startsWith(`${api}/imports`)||path===`${api}/playback`){
-        const release=catalogUsers.acquire(user.id);releases.set(request,release);
+      if((path.startsWith(`${api}/library/`)&&!path.includes('/stream/')&&!path.includes('/download/'))||path.startsWith(`${api}/audiobooks`)||path.startsWith(`${api}/personal/`)||path.startsWith(`${api}/imports`)||path===`${api}/playback`){
+        if(path.startsWith(`${api}/library/artwork/`))releaseArtwork=artworkUsers.acquire(user.id);
+        const releaseCatalog=catalogUsers.acquire(user.id),release=()=>{releaseCatalog();releaseArtwork?.();};releases.set(request,release);
         request.raw.once('aborted',release);reply.raw.once('close',release);
       }
-    }catch(error){if(error instanceof AuthError)return reply.header('Retry-After','5').code(error.status).send({error:{code:error.code,message:error.message}});throw error;}
+    }catch(error){releaseArtwork?.();if(error instanceof AuthError)return reply.header('Retry-After','5').code(error.status).send({error:{code:error.code,message:error.message}});throw error;}
   });
   app.addHook('onResponse',async(request,reply)=>{const release=releases.get(request);if(release){release();request.raw.off('aborted',release);reply.raw.off('close',release);}releases.delete(request);});
   registerImportRoutes(app, `${api}/imports`, authStore, library, config, options.lidarr);
+  registerAudiobookRoutes(app, `${api}/audiobooks`, authStore, library, config);
   registerPersonalRoutes(app, `${api}/personal`, authStore, library, config);
   registerLibraryRoutes(app, `${api}/library`, library, authStore, config, removals);
   registerArtworkRoutes(app, `${api}/library`, library, authStore, config);

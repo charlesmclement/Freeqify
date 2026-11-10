@@ -3,8 +3,8 @@ import {accountRequest} from './auth-api.js';
 import {libraryUrl} from './library-api.js';
 type Candidate={token:string;title:string;artist:string;year:string};
 type Status={enabled:boolean;selected:boolean;artist:string|null;title:string|null};
-export function SharedCoverSearch({albumId,artist,title,csrf,onChanged}:{albumId:string;artist:string;title:string;csrf:string;onChanged:()=>void}) {
-  const endpoint=`library/artwork/album/${encodeURIComponent(albumId)}`;
+export function SharedCoverSearch({albumId,artist,title,csrf,onChanged,kind='album'}:{albumId:string;artist:string;title:string;csrf:string;onChanged:()=>void;kind?:'album'|'book'}) {
+  const endpoint=`library/artwork/${kind}/${encodeURIComponent(albumId)}`;
   const [status,setStatus]=useState<Status|null>(null);
   const [searchArtist,setArtist]=useState(artist);
   const [searchAlbum,setAlbum]=useState(title);
@@ -41,20 +41,20 @@ export function SharedCoverSearch({albumId,artist,title,csrf,onChanged}:{albumId
     finally{setBusy(false);}
   }
   return <section className="shared-cover-search" aria-label="Cover search for everyone">
-    <h4>Album cover for everyone</h4>
-    <p>Administrator changes apply to all accounts. Original music files stay untouched.</p>
+    <h4>{kind==='book'?'Book':'Album'} cover for everyone</h4>
+    <p>Administrator changes apply to all accounts. Original {kind==='book'?'book':'music'} files stay untouched.</p>
     {status?.selected&&<><p>Shared cover: {status.artist} — {status.title}</p><div className="artwork-edit-actions"><button type="button" disabled={busy} onClick={()=>void save(true)}>Remove shared cover</button></div></>}
-    {status&&!status.enabled&&<p>Online search is disabled. Set MUSICBRAINZ_CONTACT in the server configuration to enable it.</p>}
+    {status&&!status.enabled&&<p>Online search is disabled. Set {kind==='book'?'AUDIOBOOKS_COVER_CONTACT':'MUSICBRAINZ_CONTACT'} in the server configuration to enable it.</p>}
     <form onSubmit={event=>void search(event)}>
-      <label>Cover artist<input value={searchArtist} maxLength={200} disabled={busy} onChange={event=>setArtist(event.target.value)}/></label>
-      <label>Cover album<input required value={searchAlbum} maxLength={200} disabled={busy} onChange={event=>setAlbum(event.target.value)}/></label>
-      <p>Search sends these names to MusicBrainz. Previews come from Cover Art Archive.</p>
+      <label>{kind==='book'?'Cover author':'Cover artist'}<input value={searchArtist} maxLength={200} disabled={busy} onChange={event=>setArtist(event.target.value)}/></label>
+      <label>{kind==='book'?'Book title':'Cover album'}<input required value={searchAlbum} maxLength={200} disabled={busy} onChange={event=>setAlbum(event.target.value)}/></label>
+      {kind==='book'?<p>Search sends these names to <a href="https://openlibrary.org" target="_blank" rel="noreferrer">Open Library</a>. Book editions may have different covers.</p>:<p>Search sends these names to MusicBrainz. Previews come from Cover Art Archive.</p>}
       <div className="artwork-edit-actions"><button disabled={busy||!status?.enabled||!searchAlbum.trim()}>{busy?'Working…':'Search for cover'}</button></div>
     </form>
-    {items?.length===0&&<p role="status">No matching albums found. Try a shorter album title or leave the artist blank.</p>}
-    {!!items?.length&&<><p>Choose a result to preview its cover. Some albums may have no image.</p><div className="cover-search-results">{items.map(item=><button type="button" key={item.token} disabled={busy} aria-pressed={selected?.token===item.token} onClick={()=>{setSelected(item);setReady(false);setError('');setMessage('');}}><strong>{item.title}</strong><small>{item.artist}{item.year?` · ${item.year}`:''}</small></button>)}</div></>}
+    {items?.length===0&&<p role="status">{kind==='book'?'No matching books found. Try a shorter title or leave the author blank.':'No matching albums found. Try a shorter album title or leave the artist blank.'}</p>}
+    {!!items?.length&&<><p>Choose a result to preview its cover. Some {kind==='book'?'books':'albums'} may have no image.</p><div className="cover-search-results">{items.map(item=><button type="button" key={item.token} disabled={busy} aria-pressed={selected?.token===item.token} onClick={()=>{setSelected(item);setReady(false);setError('');setMessage('');}}><strong>{item.title}</strong><small>{item.artist}{item.year?` · ${item.year}`:''}</small></button>)}</div></>}
     {selected&&<div className="cover-search-preview">
-      <img key={selected.token} src={libraryUrl(`artwork/album/${encodeURIComponent(albumId)}/cover-preview/${encodeURIComponent(selected.token)}`)} alt={`${selected.title} cover preview`} onLoad={()=>setReady(true)} onError={()=>{setReady(false);setError('No preview available. Try another result, or search again if the preview expired.');}}/>
+      <img key={selected.token} src={libraryUrl(`artwork/${kind}/${encodeURIComponent(albumId)}/cover-preview/${encodeURIComponent(selected.token)}`)} alt={`${selected.title} cover preview`} onLoad={()=>setReady(true)} onError={()=>{setReady(false);setError('No preview available. Try another result, or search again if the preview expired.');}}/>
       <div className="artwork-edit-actions"><button type="button" disabled={busy||!ready} onClick={()=>void save()}>Use this cover for everyone</button></div>
     </div>}
     {error&&<p role="alert" className="account-error">{error}</p>}

@@ -10,7 +10,10 @@ export interface Config {
   host: string; port: number; basePath: string; dataDir: string;
   webDistDir: string; devAllowedHosts: string[];
   auth: { secureCookies: boolean; sessionHours: number; idleMinutes: number; blocklistFile?: string };
-  navidrome: { url: string; username: string; passwordFile: string; password: string; timeoutMs: number; scanUsername?: string; scanPasswordFile?: string };
+  audiobookFfprobePath?: string;
+  audiobookCoverContact?: string;
+  audiobookSpeech?: {python:string;model:string;ffmpeg:string};
+  navidrome: { url: string; username: string; passwordFile: string; password: string; timeoutMs: number; scanUsername?: string; scanPasswordFile?: string; musicFolderId?: string; audiobookFolderId?: string; audiobookLibraryName?: string };
   lidarr: {url:string;apiKeyFile:string;rootFolderId:number|null};
   musicbrainz: { contact: string; reviewDir: string };
 }
@@ -39,6 +42,12 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env, root = projectR
   if (!upstream.pathname.endsWith('/')) upstream.pathname += '/';
   if(Boolean(env.NAVIDROME_SCAN_USERNAME)!==Boolean(env.NAVIDROME_SCAN_PASSWORD_FILE))throw new Error('Configure both NAVIDROME_SCAN_USERNAME and NAVIDROME_SCAN_PASSWORD_FILE');
   const timeoutMs = Number(env.NAVIDROME_TIMEOUT_MS ?? 8000);
+  if(env.AUDIOBOOKS_MUSIC_FOLDER_ID!==undefined&&!/^[1-9]\d{0,8}$/.test(env.AUDIOBOOKS_MUSIC_FOLDER_ID))throw new Error('AUDIOBOOKS_MUSIC_FOLDER_ID must identify an existing Navidrome library');
+  if(env.NAVIDROME_MUSIC_FOLDER_ID!==undefined&&!/^[1-9]\d{0,8}$/.test(env.NAVIDROME_MUSIC_FOLDER_ID))throw new Error('NAVIDROME_MUSIC_FOLDER_ID must identify an existing Navidrome library');
+  if(env.NAVIDROME_MUSIC_FOLDER_ID&&env.NAVIDROME_MUSIC_FOLDER_ID===env.AUDIOBOOKS_MUSIC_FOLDER_ID)throw new Error('Music and Audiobooks must use separate Navidrome libraries');
+  const audiobookLibraryName=env.AUDIOBOOKS_LIBRARY_NAME?.trim()??'Audiobooks';
+  if(Boolean(env.AUDIOBOOKS_SPEECH_PYTHON?.trim())!==Boolean(env.AUDIOBOOKS_SPEECH_MODEL?.trim()))throw new Error('Configure both AUDIOBOOKS_SPEECH_PYTHON and AUDIOBOOKS_SPEECH_MODEL');
+  if(!audiobookLibraryName||audiobookLibraryName.length>200||Array.from(audiobookLibraryName).some(c=>c.charCodeAt(0)<32||c.charCodeAt(0)===127))throw new Error('AUDIOBOOKS_LIBRARY_NAME must be a nonempty library name');
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30000) throw new Error('NAVIDROME_TIMEOUT_MS must be 100–30000');
   const secureValue = env.AUTH_SECURE_COOKIES ?? (env.NODE_ENV === 'production' ? 'true' : 'false');
   if (!['true', 'false'].includes(secureValue)) throw new Error('AUTH_SECURE_COOKIES must be true or false');
@@ -73,11 +82,19 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env, root = projectR
   return {
     ...(proxy ? {proxy} : {}),
     resources,
+    ...(env.AUDIOBOOKS_SPEECH_PYTHON?.trim()&&env.AUDIOBOOKS_SPEECH_MODEL?.trim()?{audiobookSpeech:{
+      python:env.AUDIOBOOKS_SPEECH_PYTHON.includes('/')?resolve(root,env.AUDIOBOOKS_SPEECH_PYTHON.trim()):env.AUDIOBOOKS_SPEECH_PYTHON.trim(),
+      model:resolve(root,env.AUDIOBOOKS_SPEECH_MODEL.trim()),
+      ffmpeg:env.AUDIOBOOKS_FFMPEG_PATH?.trim()?(env.AUDIOBOOKS_FFMPEG_PATH.includes('/')?resolve(root,env.AUDIOBOOKS_FFMPEG_PATH.trim()):env.AUDIOBOOKS_FFMPEG_PATH.trim()):'ffmpeg',
+    }}:{}),
+    audiobookFfprobePath:env.AUDIOBOOKS_FFPROBE_PATH?.trim()? (env.AUDIOBOOKS_FFPROBE_PATH.includes('/')?resolve(root,env.AUDIOBOOKS_FFPROBE_PATH):env.AUDIOBOOKS_FFPROBE_PATH):'ffprobe',
+    audiobookCoverContact:env.AUDIOBOOKS_COVER_CONTACT?.trim()??'',
     downloadFfmpegPath:env.DOWNLOAD_FFMPEG_PATH?.trim()? (env.DOWNLOAD_FFMPEG_PATH.includes('/')?resolve(root,env.DOWNLOAD_FFMPEG_PATH):env.DOWNLOAD_FFMPEG_PATH):'ffmpeg',
     auth: { blocklistFile: env.AUTH_BLOCKLIST_FILE ? resolve(root,env.AUTH_BLOCKLIST_FILE) : '', secureCookies: secureValue === 'true', sessionHours, idleMinutes },
     navidrome: { url: upstream.href, username: env.NAVIDROME_USERNAME ?? '',
       passwordFile: env.NAVIDROME_PASSWORD_FILE ? resolve(root, env.NAVIDROME_PASSWORD_FILE) : '',
-      password: env.NAVIDROME_PASSWORD ?? '', timeoutMs,
+      password: env.NAVIDROME_PASSWORD ?? '', timeoutMs, audiobookLibraryName, ...(env.AUDIOBOOKS_MUSIC_FOLDER_ID?{audiobookFolderId:env.AUDIOBOOKS_MUSIC_FOLDER_ID}:{}),
+      ...(env.NAVIDROME_MUSIC_FOLDER_ID?{musicFolderId:env.NAVIDROME_MUSIC_FOLDER_ID}:{}),
       ...(env.NAVIDROME_SCAN_USERNAME && env.NAVIDROME_SCAN_PASSWORD_FILE ? {scanUsername:env.NAVIDROME_SCAN_USERNAME,scanPasswordFile:resolve(root,env.NAVIDROME_SCAN_PASSWORD_FILE)} : {}) },
     lidarr: {url:lidarrUrl,apiKeyFile:env.LIDARR_API_KEY_FILE?resolve(root,env.LIDARR_API_KEY_FILE):'',rootFolderId:lidarrRoot?Number(lidarrRoot):null},
     musicbrainz: { contact: env.MUSICBRAINZ_CONTACT?.trim() ?? '', reviewDir: resolve(root, env.ARTWORK_REVIEW_DIR ?? resolve(env.XDG_DATA_HOME ?? resolve(homedir(), '.local/share'), 'freeqify-artwork-review')) },

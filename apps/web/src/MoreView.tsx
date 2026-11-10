@@ -3,7 +3,7 @@ import { ProfileMenu, useAccount } from './Authentication.js';
 import { Icon, type IconName } from './Icons.js';
 export function MoreView({onNavigate,openAdmin}:{onNavigate:(view:LibraryView)=>void;openAdmin:()=>void}){
  const account=useAccount();
- const links:{view:LibraryView;icon:IconName}[]=[{view:'Downloaded',icon:'download'},{view:'Favorites',icon:'heart'},{view:'Recently played',icon:'track'},{view:'Artists',icon:'artist'},{view:'Tracks',icon:'track'}];
+ const links:{view:LibraryView;icon:IconName}[]=[{view:'Audiobooks',icon:'book'},{view:'Downloaded',icon:'download'},{view:'Favorites',icon:'heart'},{view:'Recently played',icon:'track'},{view:'Artists',icon:'artist'},{view:'Tracks',icon:'track'}];
  return <section className="more-view" aria-labelledby="more-heading"><span className="eyebrow">YOUR SPACE</span><h1 id="more-heading">Make yourself at home.</h1><p>Your account, your collections, your frequency.</p>
  <div className="more-links">{links.map(link=><button key={link.view} onClick={()=>onNavigate(link.view)}><Icon name={link.icon}/>{link.view}<Icon name="chevron"/></button>)}</div>
  <section className="more-account"><h2>Your account</h2><ProfileMenu openAdmin={openAdmin}/>{account.state?.user?.role==='admin'&&<button className="account-primary" onClick={openAdmin}>Administration & artwork manager</button>}</section>

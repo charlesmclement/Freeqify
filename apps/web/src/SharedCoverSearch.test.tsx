@@ -52,3 +52,11 @@ it('limits shared cover controls to administrators while preserving personal art
  fireEvent.click(screen.getByRole('button',{name:'Edit artwork'}));
  expect(screen.queryByRole('region',{name:'Cover search for everyone'})).not.toBeInTheDocument();expect(screen.getByText(/Personal artwork choices/)).toBeInTheDocument();
 });
+
+it('searches books by author and title with book previews and the same explicit save flow',async()=>{
+ const fetcher=setup();render(<SharedCoverSearch kind="book" albumId="book" artist="Author" title="Story" csrf="csrf" onChanged={()=>{}}/>);
+ expect(screen.getByLabelText('Cover author')).toHaveValue('Author');expect(screen.getByLabelText('Book title')).toHaveValue('Story');
+ const search=screen.getByRole('button',{name:'Search for cover'});await waitFor(()=>expect(search).toBeEnabled());fireEvent.click(search);fireEvent.click(await screen.findByRole('button',{name:/Found edition/}));
+ expect(screen.getByRole('img')).toHaveAttribute('src','/api/library/artwork/book/book/cover-preview/preview-token');fireEvent.load(screen.getByRole('img'));fireEvent.click(screen.getByRole('button',{name:'Use this cover for everyone'}));
+ await screen.findByRole('status');expect(fetcher).toHaveBeenCalledWith('/api/library/artwork/book/book/shared',expect.objectContaining({method:'POST',body:JSON.stringify({mode:'select',token:'preview-token'})}));
+});

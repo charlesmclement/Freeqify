@@ -1,6 +1,7 @@
 import type { SVGProps } from 'react';
-export type IconName='download'|'tools'|'document'|'capture'|'upload'|'folder'|'home'|'search'|'library'|'playlists'|'more'|'heart'|'album'|'artist'|'track'|'back'|'next'|'shuffle'|'repeat'|'queue'|'close'|'chevron'|'settings'|'play'|'pause';
+export type IconName='book'|'download'|'tools'|'document'|'capture'|'upload'|'folder'|'home'|'search'|'library'|'playlists'|'more'|'heart'|'album'|'artist'|'track'|'back'|'next'|'shuffle'|'repeat'|'queue'|'close'|'chevron'|'settings'|'play'|'pause';
 const paths:Record<IconName,string>={
+ book:'M12 5v16M12 5C8 2 4 2 2 3v16c4-1 7 0 10 2 3-2 6-3 10-2V3c-2-1-6-1-10 2Z',
  download:'M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5',
  tools:'M14 6a5 5 0 0 0-6 6L2 18l4 4 6-6a5 5 0 0 0 6-6l-4 4-4-4Z',document:'M5 2h9l5 5v15H5ZM14 2v6h5M8 12h8M8 16h8',capture:'M4 17v-4M8 20V7M12 22V2M16 18V6M20 16v-4',upload:'M12 16V2m-5 5 5-5 5 5M3 14v8h18v-8',folder:'M2 5h8l2 3h10v13H2Z',
  home:'M3 10 12 3l9 7v11h-6v-7H9v7H3Z',search:'M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0',

@@ -160,7 +160,7 @@ it('persists users, invitation status, rate limits, migrations, and sessions aft
   store = new AuthStore(file, settings);
   try {
     expect(store.session(session.token)?.user?.id).toBe(admin.id); expect(store.checkInvitation(invitation.token).expiresAt).toBe(invitation.expiresAt);
-    expect(store.db.prepare('PRAGMA user_version').get()!.user_version).toBe(12);
+    expect(store.db.prepare('PRAGMA user_version').get()!.user_version).toBe(13);
     expect(() => store.limit('persistent-rate-key', 1)).toThrow('Too many');
     expect((await store.login('owner', password, 'localhost')).id).toBe(admin.id);
   } finally { store.close(); }

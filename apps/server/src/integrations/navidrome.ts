@@ -13,7 +13,7 @@ const messages: Record<LibraryErrorCode, string> = {
   INVALID_REQUEST: 'The library request is invalid.',
 };
 export class LibraryError extends Error {
-  constructor(public readonly code: LibraryErrorCode) { super(messages[code]); }
+  constructor(public readonly code: LibraryErrorCode, message = messages[code]) { super(message); }
 }
 function malformed(): never { throw new LibraryError('MALFORMED_RESPONSE'); }
 function object(value: unknown): Record<string, unknown> {
@@ -58,6 +58,8 @@ function track(value: unknown): Track {
 }
 export interface Artwork { bytes: Buffer; contentType: string }
 export interface MusicLibrary {
+  audiobookAlbums?(offset:number,limit:number,query?:string):Promise<Page<Album>>;
+  audiobookAlbum?(id:string):Promise<AlbumDetail>;
   stream?(id: string, format: 'raw' | 'mp3', range: string | undefined, signal: AbortSignal): Promise<Response>;
   ping(): Promise<void>; artists(): Promise<Artist[]>; artist(id: string): Promise<ArtistDetail>;
   albums(offset: number, limit: number, sort?: AlbumSort): Promise<Page<Album>>; album(id: string): Promise<AlbumDetail>;
@@ -74,6 +76,8 @@ export class Navidrome implements MusicLibrary {
   private readonly scanPassword: string;
   private overviewCache: { expires: number; value: LibraryOverview } | undefined;
   private overviewPending: Promise<LibraryOverview> | undefined;
+  private foldersCache: {expires:number;value:{id:string;name:string}[]} | undefined;
+  private musicAlbumsCache: {expires:number;folder:string;ids:Set<string>} | undefined;
   constructor(private readonly config: Config['navidrome'], private readonly fetcher: typeof fetch = fetch) {
     this.password = config.password;
     this.scanPassword = config.scanPasswordFile ? readPrivateFile(config.scanPasswordFile,false,4096)!.replace(/\r?\n$/, '') : '';
@@ -144,15 +148,24 @@ export class Navidrome implements MusicLibrary {
   }
   async ping() { await this.json('ping'); }
   async artists() {
-    const data = object((await this.json('getArtists')).artists);
+    const folder=await this.musicFolder();if(folder===null)return [];
+    const data = object((await this.json('getArtists',folder?{musicFolderId:folder}:{})).artists);
     return list(data.index).flatMap(index => list(object(index).artist).map(artist));
   }
   async artist(itemId: string): Promise<ArtistDetail> {
+    const folder=await this.musicFolder();if(folder===null)throw new LibraryError('NOT_FOUND');
     const data = object((await this.json('getArtist', { id: itemId })).artist);
-    return { artist: artist(data), albums: list(data.album).map(album) };
+    const detail={artist:artist(data),albums:list(data.album).map(album)};
+    if(!folder)return detail;
+    // getArtist has no standard folder filter. Shared artists can have both books
+    // and music, so check album membership against the scoped music catalog.
+    const ids=await this.musicAlbumIds(folder);const albums=detail.albums.filter(a=>ids.has(a.id));
+    if(!albums.length)throw new LibraryError('NOT_FOUND');
+    return {artist:{...detail.artist,albumCount:albums.length},albums};
   }
   async albums(offset: number, limit: number, sort: AlbumSort = 'alphabeticalByName'): Promise<Page<Album>> {
-    const data = object((await this.json('getAlbumList2', { type: sort, size: String(limit), offset: String(offset) })).albumList2);
+    const folder=await this.musicFolder();if(folder===null)return {items:[],nextOffset:null};
+    const data = object((await this.json('getAlbumList2', { ...(folder?{musicFolderId:folder}:{}), type: sort, size: String(limit), offset: String(offset) })).albumList2);
     const items = list(data.album).map(album);
     return { items, nextOffset: items.length === limit ? offset + limit : null };
   }
@@ -160,9 +173,75 @@ export class Navidrome implements MusicLibrary {
     const data = object((await this.json('getAlbum', { id: itemId })).album);
     return { album: album(data), tracks: list(data.song).map(track) };
   }
+  /** Folder selection is server configuration, never a filesystem parameter from clients. */
+  private async folders() {
+    if(this.foldersCache&&this.foldersCache.expires>Date.now())return this.foldersCache.value;
+    const folders=list(object((await this.json('getMusicFolders')).musicFolders).musicFolder).map(value=>{
+      const folder=object(value);const folderId=String(folder.id);
+      if(!/^[1-9]\d{0,8}$/.test(folderId))return malformed();
+      return {id:folderId,name:text(folder.name,'')};
+    });
+    if(new Set(folders.map(f=>f.id)).size!==folders.length)return malformed();
+    this.foldersCache={value:folders,expires:Date.now()+15000};return folders;
+  }
+  private async audiobookFolder():Promise<string> {
+    const folders=await this.folders();
+    const selected=folders.filter(folder=>this.config.audiobookFolderId?folder.id===this.config.audiobookFolderId:folder.name===(this.config.audiobookLibraryName??'Audiobooks'));
+    if(selected.length!==1)throw new LibraryError('NOT_CONFIGURED');
+    return selected[0]!.id;
+  }
+  /** undefined preserves legacy music-only installations; null is an empty music library. */
+  private async musicFolder():Promise<string|null|undefined> {
+    const folders=await this.folders();
+    const books=folders.filter(f=>this.config.audiobookFolderId?f.id===this.config.audiobookFolderId:f.name===(this.config.audiobookLibraryName??'Audiobooks'));
+    const problem=()=>new LibraryError('NOT_CONFIGURED','Music and Audiobooks need separate libraries. An administrator must check AUDIOBOOKS_MUSIC_FOLDER_ID and NAVIDROME_MUSIC_FOLDER_ID.');
+    if(books.length>1||(this.config.audiobookFolderId&&!books.length))throw problem();
+    const music=folders.filter(f=>!books.some(b=>b.id===f.id));
+    if(this.config.musicFolderId){
+      if(!music.some(f=>f.id===this.config.musicFolderId))throw problem();
+      return this.config.musicFolderId;
+    }
+    if(!books.length)return undefined;
+    if(music.length>1)throw problem();
+    return music[0]?.id??null;
+  }
+  private async musicAlbumIds(folder:string):Promise<Set<string>> {
+    if(this.musicAlbumsCache?.folder===folder&&this.musicAlbumsCache.expires>Date.now())return this.musicAlbumsCache.ids;
+    const ids=new Set<string>();
+    for(let offset=0;offset<10000;offset+=500){
+      const page=await this.folderAlbums(folder,offset,500);page.items.forEach(a=>ids.add(a.id));
+      if(page.nextOffset===null){this.musicAlbumsCache={folder,ids,expires:Date.now()+15000};return ids;}
+    }
+    throw new LibraryError('UNAVAILABLE');
+  }
+  private async folderAlbums(folder:string,offset:number,limit:number,query=''):Promise<Page<Album>> {
+    const params={musicFolderId:folder};
+    const data=query
+      ?object((await this.json('search3',{...params,query,artistCount:'0',songCount:'0',albumCount:String(limit),albumOffset:String(offset)})).searchResult3)
+      :object((await this.json('getAlbumList2',{...params,type:'alphabeticalByName',size:String(limit),offset:String(offset)})).albumList2);
+    const items=list(data.album).map(album);
+    if(items.length>limit)return malformed();
+    return {items,nextOffset:items.length===limit?offset+limit:null};
+  }
+  async audiobookAlbums(offset:number,limit:number,query=''):Promise<Page<Album>> {
+    return this.folderAlbums(await this.audiobookFolder(),offset,limit,query);
+  }
+  async audiobookAlbum(itemId:string):Promise<AlbumDetail> {
+    const folder=await this.audiobookFolder();
+    // getAlbum has no standard musicFolderId filter. Confirm membership through the
+    // scoped enumeration before accepting an arbitrary album ID. Work remains bounded
+    // by the catalog deadline and a 10,000-album maximum; no unscoped fallback.
+    for(let offset=0;offset<10000;offset+=500){
+      const page=await this.folderAlbums(folder,offset,500);
+      if(page.items.some(item=>item.id===itemId))return this.album(itemId);
+      if(page.nextOffset===null)throw new LibraryError('NOT_FOUND');
+    }
+    throw new LibraryError('UNAVAILABLE');
+  }
   async track(itemId: string) { return track((await this.json('getSong', { id: itemId })).song); }
   async search(query: string, offset: number, limit: number): Promise<SearchResults> {
-    const data = object((await this.json('search3', { query, artistCount: String(limit), albumCount: String(limit), songCount: String(limit), artistOffset: String(offset), albumOffset: String(offset), songOffset: String(offset) })).searchResult3);
+    const folder=await this.musicFolder();if(folder===null)return {artists:[],albums:[],tracks:[]};
+    const data = object((await this.json('search3', { ...(folder?{musicFolderId:folder}:{}), query, artistCount: String(limit), albumCount: String(limit), songCount: String(limit), artistOffset: String(offset), albumOffset: String(offset), songOffset: String(offset) })).searchResult3);
     return { artists: list(data.artist).map(artist), albums: list(data.album).map(album), tracks: list(data.song).map(track) };
   }
   async tracks(offset: number, limit: number): Promise<Page<Track>> {
@@ -175,6 +254,7 @@ export class Navidrome implements MusicLibrary {
     const count = number(value.count);
     if (typeof value.scanning !== 'boolean' || count === null) return malformed();
     this.overviewCache = undefined;
+    this.foldersCache=undefined;this.musicAlbumsCache=undefined;
     return {scanning: value.scanning, count};
   }
   async scanStatus() { return this.scan('getScanStatus'); }
@@ -190,15 +270,17 @@ export class Navidrome implements MusicLibrary {
     } finally { this.overviewPending = undefined; }
   }
   private async loadOverview(): Promise<LibraryOverview> {
+    const folder=await this.musicFolder();
     const artists = await this.artists();
-    let albums = 0;
+    let albums = 0, musicTracks = 0;
     for (let page = 0; page < 1000; page++) {
       const data = await this.albums(page * 500, 500); albums += data.items.length;
+      musicTracks+=data.items.reduce((n,a)=>n+a.trackCount,0);
       if (data.nextOffset === null) {
         const scan = object((await this.json('getScanStatus')).scanStatus);
         const tracks = number(scan.count);
         if (tracks === null || typeof scan.scanning !== 'boolean') return malformed();
-        return { artists: artists.length, albums, tracks, scanning: scan.scanning };
+        return { artists: artists.length, albums, tracks:folder===undefined?tracks:musicTracks, scanning: scan.scanning };
       }
     }
     return malformed();

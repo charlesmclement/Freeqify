@@ -7,6 +7,19 @@ const cleanups:(()=>Promise<unknown>)[]=[];
 afterEach(async()=>{for(const fn of cleanups.splice(0).reverse())await fn();});
 const env={NODE_ENV:'production',DEPLOYMENT_MODE:'proxy',PUBLIC_ORIGIN:'https://music.example.test',TRUSTED_PROXY_PEER:'127.0.0.1'};
 const headers={host:'music.example.test','x-forwarded-for':'192.0.2.8','x-forwarded-proto':'https'};
+it('preserves configured month-long sessions on upgrade while bounding idle expiry by absolute expiry',()=>{
+ const settings=readConfig({...env,SESSION_HOURS:'720',SESSION_IDLE_MINUTES:'43200'}).auth;
+ let now=1_800_000_000_000;const store=new AuthStore(':memory:',settings,()=>now);
+ try{
+  const user={id:'deployment-owner',username:'deployment-owner',role:'listener' as const,status:'active' as const,createdAt:now};
+  store.db.prepare('INSERT INTO users VALUES(?,?,?,?,?,?)').run(user.id,user.username,'unused-test-hash',user.role,user.status,user.createdAt);
+  const session=store.createSession(user);now+=29*86400000;expect(store.session(session.token)?.user?.id).toBe(user.id);
+  now+=86400000;expect(store.session(session.token)).toBeNull();
+ }finally{store.close();}
+ expect(readConfig({}).auth).toMatchObject({sessionHours:720,idleMinutes:43200});
+ expect(readConfig({SESSION_HOURS:'168',SESSION_IDLE_MINUTES:'30'}).auth).toMatchObject({sessionHours:168,idleMinutes:30});
+ for(const value of ['0','43201','1.5'])expect(()=>readConfig({...env,SESSION_IDLE_MINUTES:value})).toThrow('SESSION_IDLE_MINUTES');
+});
 async function fixture(base='/'){
  const dir=await mkdtemp('/tmp/freeqify-proxy-');cleanups.push(()=>rm(dir,{recursive:true,force:true}));await writeFile(dir+'/index.html',`<meta content="${base}">`);
  const config=readConfig({...env,BASE_PATH:base,WEB_DIST_DIR:dir});const store=new AuthStore(':memory:',config.auth);const app=await createApp(config,{authStore:store});cleanups.push(()=>app.close());return {app,store};

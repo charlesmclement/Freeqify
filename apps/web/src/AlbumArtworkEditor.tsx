@@ -6,7 +6,7 @@ import {SharedCoverSearch} from './SharedCoverSearch.js';
 import { artworkPresets } from './artwork-presets.js';
 type Choice={mode:'auto'|'fallback'|'selected'|'custom'|'none';coverKey:string|null;shared?:boolean};
 function coverName(name:string){return name.replace(/^(generic|genre)_\d+_/,'').replace(/\.jpg$/,'').replaceAll('_',' ');}
-export function AlbumArtworkEditor({albumId,artist='',title=''}:{albumId:string;artist?:string;title?:string}) {
+export function AlbumArtworkEditor({albumId,artist='',title='',kind='album'}:{albumId:string;artist?:string;title?:string;kind?:'album'|'book'}) {
   const account=useOptionalAccount();
   const [open,setOpen]=useNavigationState('artwork',false,isBoolean);const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');const [choice,setChoice]=useState<Choice|null>(null);
@@ -39,9 +39,9 @@ export function AlbumArtworkEditor({albumId,artist='',title=''}:{albumId:string;
   // Library views can also be rendered by standalone read-only consumers/tests.
   if(!account?.state?.user)return null;
   return <div className="album-artwork-editor">
-    <button className="album-play" type="button" onClick={()=>setOpen(!open)} aria-expanded={open}>{open?'Close artwork editor':'Edit artwork'}</button>
-    {open&&<section className="artwork-controls" aria-label="Album artwork settings">
-      {account.state.user.role==='admin'&&<SharedCoverSearch key={albumId} albumId={albumId} artist={artist} title={title} csrf={account.state.csrf} onChanged={()=>{void accountRequest<Choice>(`${endpoint}/choice`).then(setChoice).catch(()=>{});window.dispatchEvent(new Event('freeqify:artwork-changed'));}}/>}
+    <button className="album-play" type="button" onClick={()=>setOpen(!open)} aria-expanded={open}>{open?'Close artwork editor':kind==='book'?'Edit book cover':'Edit artwork'}</button>
+    {open&&<section className="artwork-controls" aria-label={kind==='book'?'Book cover settings':'Album artwork settings'}>
+      {account.state.user.role==='admin'&&<SharedCoverSearch key={albumId} kind={kind} albumId={albumId} artist={artist} title={title} csrf={account.state.csrf} onChanged={()=>{void accountRequest<Choice>(`${endpoint}/choice`).then(setChoice).catch(()=>{});window.dispatchEvent(new Event('freeqify:artwork-changed'));}}/>}
       <p>{choice?.shared?'An administrator cover is active for everyone. Personal choices below take effect when it is removed.':'Personal artwork choices affect only your account. Original artwork is preserved.'}</p>
       <small>Current selection: {choice?.mode??'Loading…'}{choice?.coverKey?` (${coverName(choice.coverKey)})`:''}</small>
       <label>Upload your own cover (JPG, PNG or WebP, up to 1 MB)

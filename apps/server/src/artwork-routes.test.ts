@@ -15,12 +15,12 @@ import type {Outcome} from './online-artwork.js';
 const close:(()=>Promise<void>)[]=[];
 afterEach(async()=>{for(const dispose of close.splice(0))await dispose();});
 const sample:AlbumDetail={album:{id:'al-1',title:'A',artist:'B',artistId:null,artworkId:null,trackCount:1,year:null},tracks:[{id:'song-1',title:'T',artist:'B',album:'A',albumId:'al-1',artworkId:null,trackNumber:1,duration:30,format:'mp3'}]};
-async function fixture(base='/', online?: {lookup:(artist:string,album:string)=>Promise<Outcome>} & Partial<CoverSearchProvider>, options: {database?:string;reviewDir?:string}={}) {
+async function fixture(base='/', online?: {lookup:(artist:string,album:string)=>Promise<Outcome>} & Partial<CoverSearchProvider>, options: {database?:string;reviewDir?:string;books?:{lookup:(artist:string,album:string)=>Promise<Outcome>}&CoverSearchProvider}={}) {
  const config=readConfig({BASE_PATH:base,...(options.reviewDir?{ARTWORK_REVIEW_DIR:options.reviewDir}:{})});const auth=new AuthStore(options.database??':memory:',config.auth);
  const accounts=['alice','bob'].map(id=>{auth.db.prepare('INSERT OR IGNORE INTO users VALUES (?,?,?,?,?,?)').run(id,id,'test-hash','listener','active',1);return {id,username:id,role:'listener',status:'active',createdAt:1} as Account;});
  const sessions=accounts.map(account=>auth.createSession(account));
- const library={album:vi.fn().mockResolvedValue(sample),artwork:vi.fn().mockRejectedValue(new LibraryError('NOT_FOUND'))} as unknown as MusicLibrary;
- const app=Fastify();registerAuthentication(app,`${base}api`,config,auth);registerArtworkRoutes(app,`${base}api/library`,library,auth,config,online);
+ const library={audiobookAlbum:vi.fn().mockResolvedValue(sample),album:vi.fn().mockResolvedValue(sample),artwork:vi.fn().mockRejectedValue(new LibraryError('NOT_FOUND'))} as unknown as MusicLibrary;
+ const app=Fastify();registerAuthentication(app,`${base}api`,config,auth);registerArtworkRoutes(app,`${base}api/library`,library,auth,config,online,options.books);
  let closed=false;const stop=async()=>{if(!closed){closed=true;await app.close();auth.close();}};close.push(stop);
  const send=(suffix:string,payload?:unknown,who=0,overrides:Record<string,string>={})=>app.inject({url:`${base}api/library/artwork/album/al-1${suffix}`,method:payload===undefined?'GET':'POST',...(payload===undefined?{}:{payload}),headers:{cookie:`freeqify_session=${sessions[who]!.token}`,origin:'http://localhost:80','x-csrf-token':sessions[who]!.csrf,...overrides}});
  const record=(user='alice')=>auth.db.prepare('SELECT mode,cover_key FROM album_artwork_choices WHERE user_id=? AND album_id=?').get(user,'al-1');
@@ -297,7 +297,7 @@ it('keeps shared covers after restart without deleting personal preferences',asy
  expect((await first.send('/shared',{mode:'select',token})).statusCode).toBe(200);await first.stop();
  const second=await interactiveFixture('/',database);expect((await second.send('',undefined,1)).rawPayload).toEqual(searchImage);
  expect(second.record('bob')).toMatchObject({mode:'none'});
- expect(second.auth.db.prepare('PRAGMA user_version').get()?.user_version).toBe(12);
+ expect(second.auth.db.prepare('PRAGMA user_version').get()?.user_version).toBe(13);
 });
 it('rolls back a shared cover when the global collection limit is reached',async()=>{
  const f=await interactiveFixture();
@@ -307,4 +307,29 @@ it('rolls back a shared cover when the global collection limit is reached',async
  expect((await f.send('/shared',{mode:'select',token})).statusCode).toBe(409);
  expect(f.auth.db.prepare("SELECT * FROM shared_album_artwork WHERE album_id='al-1'").get()).toBeUndefined();
  expect(f.auth.db.prepare('SELECT count(*) AS n FROM shared_album_artwork').get()?.n).toBe(5000);
+});
+
+ it('uses the book provider and separate automatic cache without changing music covers',async()=>{
+  const artwork={contentType:'image/jpeg',bytes:Buffer.from([255,216,255,0,8,9,10,11])};
+  const music={lookup:vi.fn(async():Promise<Outcome>=>({kind:'missing'}))};
+  const books={lookup:vi.fn(async():Promise<Outcome>=>({kind:'found',artwork})),search:vi.fn(),candidateCover:vi.fn()};
+  const f=await fixture('/music/',music,{books});
+  const request=()=>f.app.inject({url:'/music/api/library/artwork/book/al-1',headers:{cookie:`freeqify_session=${f.sessions[0]!.token}`}});
+  expect((await request()).statusCode).toBe(200);expect(books.lookup).toHaveBeenCalledWith('B','A');expect(music.lookup).not.toHaveBeenCalled();
+  expect(f.auth.db.prepare('SELECT album_id FROM album_online_artwork').get()?.album_id).toBe('book:al-1');await request();expect(books.lookup).toHaveBeenCalledTimes(1);
+  vi.mocked(f.library.audiobookAlbum!).mockRejectedValue(new LibraryError('NOT_FOUND'));expect((await request()).statusCode).toBe(404);
+  expect((await f.app.inject({url:'/music/api/library/artwork/book/al-1'})).statusCode).toBe(401);
+ });
+
+it('keeps book cover search admin-only, validates membership and preserves personal choices beneath shared covers',async()=>{
+ const books=interactiveProvider(),f=await fixture('/',undefined,{books});
+ const send=(suffix:string,payload?:unknown,who=0,csrf=true)=>f.app.inject({url:`/api/library/artwork/book/al-1${suffix}`,method:payload===undefined?'GET':'POST',...(payload===undefined?{}:{payload}),headers:{cookie:`freeqify_session=${f.sessions[who]!.token}`,origin:'http://localhost:80','x-csrf-token':csrf?f.sessions[who]!.csrf:''}});
+ expect((await send('/cover-search',{artist:'B',album:'A'})).statusCode).toBe(403);
+ f.auth.db.prepare("UPDATE users SET role='admin' WHERE id='alice'").run();
+ expect((await send('/cover-search',{artist:'B',album:'A'},0,false)).statusCode).toBe(403);expect(books.search).not.toHaveBeenCalled();
+ await f.send('/choice',{mode:'none'},1);const result=await send('/cover-search',{artist:'B',album:'A'});expect(result.statusCode).toBe(200);expect(f.library.audiobookAlbum).toHaveBeenCalledWith('al-1');
+ const token=result.json().items[0].token;expect((await send(`/cover-preview/${token}`)).rawPayload).toEqual(searchImage);
+ expect((await f.send(`/cover-preview/${token}`)).statusCode).toBe(404);
+ expect((await send('/shared',{mode:'select',token})).statusCode).toBe(200);expect((await send('',undefined,1)).rawPayload).toEqual(searchImage);
+ expect(f.record('bob')).toMatchObject({mode:'none'});expect((await send('/shared',{mode:'remove'})).statusCode).toBe(200);expect((await send('',undefined,1)).statusCode).toBe(204);
 });

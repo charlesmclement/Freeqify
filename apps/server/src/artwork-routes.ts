@@ -11,6 +11,7 @@ import { LibraryError, validId, type MusicLibrary } from './integrations/navidro
 import { artworkName, reviewedArtwork } from './review-artwork.js';
 import { OnlineAlbumArtwork } from './online-artwork.js';
 import {registerSharedArtwork,sharedCover,type CoverSearchProvider} from './shared-artwork.js';
+import {OnlineBookArtwork} from './book-artwork.js';
 
 export const presetCovers = [
   'generic_01_sunset_ridge.jpg',
@@ -49,7 +50,8 @@ function validatedImage(input: unknown) {
   if (!((contentType==='image/png'&&png(bytes))||(contentType==='image/jpeg'&&jpg(bytes))||(contentType==='image/webp'&&webp(bytes)))) throw fail();
   return {bytes,contentType};
 }
-export function registerArtworkRoutes(app:FastifyInstance,prefix:string,library:MusicLibrary,auth:AuthStore,config:Config, onlineArtwork?: Pick<OnlineAlbumArtwork, 'lookup'> & Partial<CoverSearchProvider>){
+export function registerArtworkRoutes(app:FastifyInstance,prefix:string,library:MusicLibrary,auth:AuthStore,config:Config, onlineArtwork?: Pick<OnlineAlbumArtwork, 'lookup'> & Partial<CoverSearchProvider>,bookArtwork?:Pick<OnlineBookArtwork,'lookup'|'search'|'candidateCover'>){
+  const books=bookArtwork??(config.audiobookCoverContact?new OnlineBookArtwork({contact:config.audiobookCoverContact}):null);
   const online = onlineArtwork ?? (config.musicbrainz.contact
     ? new OnlineAlbumArtwork({contact: config.musicbrainz.contact})
     : null);
@@ -100,11 +102,16 @@ export function registerArtworkRoutes(app:FastifyInstance,prefix:string,library:
       return reply.code(503).send({error:{code:'ARTWORK_UNAVAILABLE',message:'Album artwork is temporarily unavailable.'}});
     });
     registerSharedArtwork(routes,auth,library,online?.search && online?.candidateCover ? online as CoverSearchProvider : null);
+    registerSharedArtwork(routes,auth,library,books,'book');
     routes.get('/artwork/album/:id/choice',async request=>{
       const uid=user(request),albumId=id(request),choice=row(uid,albumId),shared=sharedCover(auth,albumId);return {mode:shared?'custom':choice?.mode??'auto',coverKey:shared?null:choice?.cover_key??null,shared:!!shared};
     });
-    routes.get('/artwork/album/:id',async(request,reply)=>{
+    for(const kind of ['album','book'] as const)routes.get(`/artwork/${kind}/:id`,async(request,reply)=>{
       const uid=user(request),albumId=id(request),choice=row(uid,albumId);
+      const bookDetail=kind==='book'?await library.audiobookAlbum?.(albumId):undefined;
+      if(kind==='book'&&!bookDetail)throw new LibraryError('NOT_FOUND');
+      user(request);
+      const cacheId=kind==='book'?`book:${albumId}`:albumId,provider=kind==='book'?books:online;
       // A manual change made while upstream IO is pending must win that response too.
       const manual=async()=>{
         user(request);
@@ -122,14 +129,14 @@ export function registerArtworkRoutes(app:FastifyInstance,prefix:string,library:
       if(choice?.mode==='custom')return reply.type(choice.content_type!).send(Buffer.from(choice.image!));
       if(choice?.mode==='selected')return reply.type('image/jpeg').send(await preset(choice.cover_key!));
       // An automatic fallback never masks genuine album or track artwork.
-      const detail=await library.album(albumId);
+      const detail=bookDetail??await library.album(albumId);
       // Exclude Navidrome disc artwork (dc-*): use album/file covers or verified online art.
       const candidates=[detail.album.artworkId,...detail.tracks.map(t=>t.artworkId)].filter((v):v is string=>typeof v==='string' && !v.startsWith('dc-'));
       for(const artworkId of new Set(candidates)){
         try{const original=await library.artwork(artworkId);if(await manual())return reply;return reply.type(original.contentType).send(original.bytes);}
         catch(error){if(error instanceof LibraryError&&error.code==='NOT_FOUND')continue;throw error;}
       }
-      const cached=auth.db.prepare('SELECT artist,title,content_type,image FROM album_online_artwork WHERE user_id=? AND album_id=?').get(uid,albumId);
+      const cached=auth.db.prepare('SELECT artist,title,content_type,image FROM album_online_artwork WHERE user_id=? AND album_id=?').get(uid,cacheId);
       if(cached && cached.artist===artworkName(detail.album.artist) && cached.title===artworkName(detail.album.title)){
         if(await manual())return reply;
         return reply.type(String(cached.content_type)).send(Buffer.from(cached.image as Uint8Array));
@@ -139,15 +146,15 @@ export function registerArtworkRoutes(app:FastifyInstance,prefix:string,library:
         auth.db.exec('BEGIN IMMEDIATE');
         try{const before=auth.storageUsage(uid);
           auth.db.prepare(`INSERT INTO album_online_artwork VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,album_id) DO UPDATE SET artist=excluded.artist,title=excluded.title,content_type=excluded.content_type,image=excluded.image`)
-            .run(uid,albumId,artworkName(detail.album.artist),artworkName(detail.album.title),artwork.contentType,artwork.bytes);
+            .run(uid,cacheId,artworkName(detail.album.artist),artworkName(detail.album.title),artwork.contentType,artwork.bytes);
           auth.checkStorage(uid,before);auth.db.exec('COMMIT');
         }catch(error){auth.db.exec('ROLLBACK');throw error;}
         return reply.type(artwork.contentType).send(artwork.bytes);
       };
       const reviewed=await reviewedArtwork(config.musicbrainz.reviewDir,detail.album.artist,detail.album.title);
       if(reviewed)return persist(reviewed);
-      if (online) {
-        const result = await online.lookup(detail.album.artist, detail.album.title);
+      if (provider) {
+        const result = await provider.lookup(detail.album.artist, detail.album.title);
         user(request);
 
         if (result.kind === 'found') {

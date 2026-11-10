@@ -99,6 +99,8 @@ export function removableLibrary(raw:MusicLibrary,store:LibraryRemovals):MusicLi
   return response;
  };
  Object.defineProperties(library,{
+  audiobookAlbums:{get:()=>raw.audiobookAlbums?async(offset:number,limit:number,query?:string)=>{const value=await raw.audiobookAlbums!(offset,limit,query),v=await visibility();return v?{...value,items:value.items.filter(a=>shownAlbum(a,v)).map(a=>albumCount(a,v))}:value;}:undefined},
+  audiobookAlbum:{get:()=>raw.audiobookAlbum?async(id:string)=>{if(store.has('album',id))throw new LibraryError('NOT_FOUND');const value=await raw.audiobookAlbum!(id);if(store.has('album',id))throw new LibraryError('NOT_FOUND');const tracks=value.tracks.filter(t=>!store.blocksTrack(t));if(value.tracks.length&&!tracks.length)throw new LibraryError('NOT_FOUND');return {album:{...value.album,trackCount:tracks.length},tracks};}:undefined},
   scanStatus:{get:()=>raw.scanStatus?()=>raw.scanStatus!():undefined},
   startScan:{get:()=>raw.startScan?()=>{cached=undefined;return raw.startScan!();}:undefined},
   stream:{get:()=>raw.stream?stream:undefined},

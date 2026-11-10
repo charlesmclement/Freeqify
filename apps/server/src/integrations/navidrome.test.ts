@@ -10,7 +10,7 @@ function response(data: Record<string, unknown> = {}) {
   return new Response(JSON.stringify({ 'subsonic-response': { status: 'ok', version: '1.16.1', ...data } }), { headers: { 'content-type': 'application/json' } });
 }
 function setup(data: Record<string, unknown>) {
-  const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response(data));
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async url=>response(String(url).includes('getMusicFolders')?{musicFolders:{musicFolder:[{id:1,name:'Music'}]}}:data));
   return { client: new Navidrome(config, fetcher), fetcher };
 }
 it('connects with a fresh salted token in POST form data and no credentials in URL', async () => {
@@ -51,7 +51,7 @@ it('times out an unavailable engine', async () => {
 it('handles an empty library with real zero counts', async () => {
   const fetcher = vi.fn<typeof fetch>().mockImplementation(async url => {
     const path = String(url);
-    return response(path.includes('getArtists') ? { artists: {} } : path.includes('getAlbumList2') ? { albumList2: {} } : { scanStatus: { count: 0, scanning: false } });
+    return response(path.includes('getMusicFolders') ? {musicFolders:{musicFolder:[{id:1,name:'Music'}]}} : path.includes('getArtists') ? { artists: {} } : path.includes('getAlbumList2') ? { albumList2: {} } : { scanStatus: { count: 0, scanning: false } });
   });
   const client = new Navidrome(config, fetcher);
   expect(await client.overview()).toEqual({ artists: 0, albums: 0, tracks: 0, scanning: false });
@@ -67,7 +67,7 @@ it('retrieves an artist and its albums using stable string IDs', async () => {
 it('paginates albums and passes only documented pagination parameters', async () => {
   const { client, fetcher } = setup({ albumList2: { album: [{ id: 'a1', name: 'Album', artist: 'Artist', coverArt: 'al-a1_0' }] } });
   expect(await client.albums(2, 1)).toMatchObject({ items: [{ id: 'a1', artworkId: 'al-a1_0' }], nextOffset: 3 });
-  const body = fetcher.mock.calls[0]![1]!.body as URLSearchParams;
+  const body = fetcher.mock.calls.find(([url])=>String(url).includes('getAlbumList2'))![1]!.body as URLSearchParams;
   expect(body.get('offset')).toBe('2'); expect(body.get('type')).toBe('alphabeticalByName');
 });
 it.each(['mp3', 'wav'])('retrieves %s metadata without conversion or private paths', async suffix => {
@@ -81,10 +81,10 @@ it('handles WAV files without tags, duration, or cover art', async () => {
   expect(await client.album('a')).toMatchObject({ album: { title: 'Unknown album', artist: 'Unknown artist' }, tracks: [{ title: 'Untitled track', artist: 'Unknown artist', album: 'Unknown album', duration: null, artworkId: null, format: 'wav' }] });
 });
 it('searches all three categories and enumerates tracks with empty-query search3', async () => {
-  const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => response({ searchResult3: { artist: [{ id: 'a', name: 'Artist' }], album: [{ id: 'b', name: 'Album' }], song: [{ id: 'c', title: 'Track' }] } }));
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async url => response(String(url).includes('getMusicFolders')?{musicFolders:{musicFolder:[{id:1,name:'Music'}]}}:{ searchResult3: { artist: [{ id: 'a', name: 'Artist' }], album: [{ id: 'b', name: 'Album' }], song: [{ id: 'c', title: 'Track' }] } }));
   const client = new Navidrome(config, fetcher);
   expect(await client.search('test & words', 0, 48)).toMatchObject({ artists: [{ id: 'a' }], albums: [{ id: 'b' }], tracks: [{ id: 'c' }] });
-  expect((fetcher.mock.calls[0]![1]!.body as URLSearchParams).get('query')).toBe('test & words');
+  expect((fetcher.mock.calls.find(([url])=>String(url).includes('search3'))![1]!.body as URLSearchParams).get('query')).toBe('test & words');
   expect(await client.tracks(0, 48)).toMatchObject({ items: [{ id: 'c' }], nextOffset: null });
 });
 it('retrieves bounded artwork as image bytes without forwarding upstream headers', async () => {
@@ -133,7 +133,7 @@ it('rejects missing stream tracks using sanitized metadata errors before audio f
 it('accepts Navidrome disc-art IDs without relaxing track identifiers',async()=>{const {client}=setup({song:{id:'song-1',coverArt:'dc-abcdefghijklmnopqrstuv:1_0'}});expect((await client.track('song-1')).artworkId).toBe('dc-abcdefghijklmnopqrstuv:1_0');});
 it.each(['newest','alphabeticalByArtist'] as const)('requests documented %s album ordering',async sort=>{
  const {client,fetcher}=setup({albumList2:{album:[]}});await client.albums(0,8,sort);
- expect((fetcher.mock.calls[0]![1]!.body as URLSearchParams).get('type')).toBe(sort);
+ expect((fetcher.mock.calls.find(([url])=>String(url).includes('getAlbumList2'))![1]!.body as URLSearchParams).get('type')).toBe(sort);
 });
 
 it('starts and checks scans using only supported fixed Subsonic endpoints',async()=>{
@@ -149,3 +149,88 @@ it('uses optional private scan credentials only for startScan, preserving ordina
  try{const fetcher=vi.fn<typeof fetch>().mockImplementation(async()=>response({scanStatus:{scanning:false,count:301}}));const client=new Navidrome({...config,scanUsername:'disposable-scanner',scanPasswordFile:file},fetcher);await client.startScan();await client.scanStatus();await client.ping();expect(fetcher.mock.calls.map(([,o])=>(o!.body as URLSearchParams).get('u'))).toEqual(['disposable-scanner','private-user','private-user']);expect(fetcher.mock.calls.every(([u])=>!String(u).includes('secret'))).toBe(true);}finally{rmSync(dir,{recursive:true,force:true});}
 });
 it('rejects incomplete scanner credential configuration',()=>{expect(()=>readConfig({NAVIDROME_SCAN_USERNAME:'scanner'})).toThrow('Configure both');});
+
+it('scopes audiobook browsing, search and additions to the dedicated library',async()=>{
+ const calls:{endpoint:string;params:URLSearchParams}[]=[];
+ const fetcher=vi.fn<typeof fetch>().mockImplementation(async(url,init)=>{
+  const endpoint=new URL(String(url)).pathname.split('/').at(-1)!,params=init!.body as URLSearchParams;calls.push({endpoint,params});
+  if(endpoint==='getMusicFolders.view')return response({musicFolders:{musicFolder:[{id:1,name:'Music'},{id:3,name:'Audiobooks'}]}});
+  if(endpoint==='getAlbum.view')return response({album:{id:'book',name:'Book',song:[{id:'part',title:'Part',duration:90000}]}});
+  expect(params.get('musicFolderId')).toBe('3');
+  if(endpoint==='search3.view'){expect(params.get('artistCount')).toBe('0');expect(params.get('songCount')).toBe('0');return response({searchResult3:{album:[{id:'book',name:'Book'}]}});}
+  return response({albumList2:{album:[{id:'book',name:'Book'}]}});
+ });
+ const client=new Navidrome(config,fetcher);
+ expect((await client.audiobookAlbums(0,48)).items[0]?.id).toBe('book');
+ expect((await client.audiobookAlbums(48,48,'title')).items[0]?.id).toBe('book');
+ expect((await client.audiobookAlbum('book')).tracks[0]?.duration).toBe(90000);
+ const reads=calls.filter(c=>c.endpoint==='getAlbum.view').length;
+ await expect(client.audiobookAlbum('music-album')).rejects.toMatchObject({code:'NOT_FOUND'});
+ expect(calls.filter(c=>c.endpoint==='getAlbum.view')).toHaveLength(reads);
+});
+it('never falls back to the whole music catalog when the audiobook library is absent or ambiguous',async()=>{
+ for(const musicFolder of [[{id:1,name:'Music'}],[{id:3,name:'Audiobooks'},{id:4,name:'Audiobooks'}]]){
+  const fetcher=vi.fn<typeof fetch>().mockImplementation(async()=>response({musicFolders:{musicFolder}}));
+  const client=new Navidrome(config,fetcher);await expect(client.audiobookAlbums(0,48)).rejects.toMatchObject({code:'NOT_CONFIGURED'});expect(fetcher).toHaveBeenCalledTimes(1);
+ }
+ const fetcher=vi.fn<typeof fetch>().mockImplementation(async(url,init)=>String(url).includes('getMusicFolders')?response({musicFolders:{musicFolder:[{id:4,name:'Spoken word'}]}}):(expect((init!.body as URLSearchParams).get('musicFolderId')).toBe('4'),response({albumList2:{}})));
+ expect(await new Navidrome({...config,audiobookFolderId:'4'},fetcher).audiobookAlbums(0,48)).toEqual({items:[],nextOffset:null});
+ expect(()=>readConfig({AUDIOBOOKS_MUSIC_FOLDER_ID:'../files/Audiobooks'})).toThrow();
+ expect(()=>readConfig({AUDIOBOOKS_LIBRARY_NAME:' '})).toThrow();
+});
+
+it('separates music browse, search, artist albums and counts before pagination while retaining book media',async()=>{
+ const music={id:'music',name:'Music album',artist:'Shared Artist',artistId:'shared',songCount:2};
+ const book={id:'book',name:'Spoken story',artist:'Shared Artist',artistId:'shared',songCount:1};
+ const fetcher=vi.fn<typeof fetch>().mockImplementation(async(url,init)=>{
+  const endpoint=new URL(String(url)).pathname,p=init!.body as URLSearchParams,folder=p.get('musicFolderId');
+  if(endpoint.includes('getMusicFolders'))return response({musicFolders:{musicFolder:[{id:2,name:'Music'},{id:3,name:'Audiobooks'}]}});
+  if(endpoint.includes('getArtist.'))return response({artist:{id:'shared',name:'Shared Artist',albumCount:2,album:[music,book]}});
+  if(endpoint.includes('getAlbum.'))return response({album:{...book,song:[{id:'part',albumId:'book'}]}});
+  if(endpoint.includes('getSong'))return response({song:{id:'part',albumId:'book'}});
+  if(endpoint.includes('getScanStatus'))return response({scanStatus:{count:3,scanning:false}});
+  if(endpoint.includes('getArtists')){expect(folder).toBe('2');return response({artists:{index:[{artist:[{id:'shared',name:'Shared Artist',albumCount:1}]}]}});}
+  if(endpoint.includes('getAlbumList2'))return response({albumList2:{album:folder==='2'?[music]:folder==='3'?[book]:[music,book]}});
+  if(endpoint.includes('search3')){expect(folder).toBe('2');return response({searchResult3:{artist:[{id:'shared'}],album:[music],song:[{id:'song',albumId:'music'}]}});}
+  throw new Error('Unexpected endpoint');
+ });
+ const client=new Navidrome(config,fetcher);
+ expect((await client.albums(48,48,'newest')).items.map(a=>a.id)).toEqual(['music']);
+ const pagination=fetcher.mock.calls.find(([url])=>String(url).includes('getAlbumList2'))![1]!.body as URLSearchParams;
+ expect(Object.fromEntries(['offset','size','type','musicFolderId'].map(k=>[k,pagination.get(k)]))).toEqual({offset:'48',size:'48',type:'newest',musicFolderId:'2'});
+ expect((await client.search('story',48,48)).tracks.map(t=>t.id)).toEqual(['song']);
+ expect((await client.tracks(0,48)).items.map(t=>t.id)).toEqual(['song']);
+ expect(await client.artist('shared')).toMatchObject({artist:{albumCount:1},albums:[{id:'music'}]});
+ expect((await client.artist('shared')).albums).toHaveLength(1);
+ expect(await client.overview()).toEqual({artists:1,albums:1,tracks:2,scanning:false});
+ expect((await client.audiobookAlbums(0,48)).items.map(a=>a.id)).toEqual(['book']);
+ expect((await client.audiobookAlbum('book')).tracks[0]?.id).toBe('part');
+ expect((await client.track('part')).albumId).toBe('book');
+});
+it('keeps legacy music browsing unscoped when no audiobook source exists',async()=>{
+ const {client,fetcher}=setup({albumList2:{album:[]}});await client.albums(0,48);
+ expect((fetcher.mock.calls.at(-1)![1]!.body as URLSearchParams).has('musicFolderId')).toBe(false);
+});
+it('returns an empty music catalog when the account only has books',async()=>{
+ const fetcher=vi.fn<typeof fetch>().mockImplementation(async()=>response({musicFolders:{musicFolder:[{id:3,name:'Audiobooks'}]}}));const client=new Navidrome(config,fetcher);
+ expect(await client.artists()).toEqual([]);expect(await client.albums(0,48)).toEqual({items:[],nextOffset:null});
+ expect(await client.tracks(0,48)).toEqual({items:[],nextOffset:null});expect(await client.search('book',0,48)).toEqual({artists:[],albums:[],tracks:[]});
+ await expect(client.artist('author')).rejects.toMatchObject({code:'NOT_FOUND'});expect(fetcher).toHaveBeenCalledTimes(1);
+});
+it('requires an explicit music choice for multiple remaining libraries and never selects books as music',async()=>{
+ const fetcher=vi.fn<typeof fetch>().mockImplementation(async url=>response(String(url).includes('getMusicFolders')?{musicFolders:{musicFolder:[{id:1,name:'Archive'},{id:2,name:'Music'},{id:3,name:'Audiobooks'}]}}:{albumList2:{}}));
+ await expect(new Navidrome(config,fetcher).albums(0,48)).rejects.toMatchObject({code:'NOT_CONFIGURED'});
+ for(const musicFolderId of ['3','4'])await expect(new Navidrome({...config,musicFolderId},fetcher).albums(0,48)).rejects.toMatchObject({code:'NOT_CONFIGURED'});
+ expect(await new Navidrome({...config,musicFolderId:'2'},fetcher).albums(0,48)).toEqual({items:[],nextOffset:null});
+ expect((fetcher.mock.calls.at(-1)![1]!.body as URLSearchParams).get('musicFolderId')).toBe('2');
+ expect(()=>readConfig({NAVIDROME_MUSIC_FOLDER_ID:'../Music'})).toThrow();
+ expect(()=>readConfig({NAVIDROME_MUSIC_FOLDER_ID:'3',AUDIOBOOKS_MUSIC_FOLDER_ID:'3'})).toThrow('separate');
+});
+it('fails closed for a missing or ambiguous book source and refreshes folder selection after a scan',async()=>{
+ let folders=[{id:2,name:'Music'}];const fetcher=vi.fn<typeof fetch>().mockImplementation(async url=>response(String(url).includes('getMusicFolders')?{musicFolders:{musicFolder:folders}}:String(url).includes('startScan')?{scanStatus:{scanning:false,count:0}}:{albumList2:{}}));
+ await expect(new Navidrome({...config,audiobookFolderId:'3'},fetcher).albums(0,48)).rejects.toMatchObject({code:'NOT_CONFIGURED'});
+ const client=new Navidrome(config,fetcher);await client.albums(0,48);expect((fetcher.mock.calls.at(-1)![1]!.body as URLSearchParams).has('musicFolderId')).toBe(false);
+ folders=[...folders,{id:3,name:'Audiobooks'}];await client.startScan();await client.albums(0,48);
+ expect((fetcher.mock.calls.at(-1)![1]!.body as URLSearchParams).get('musicFolderId')).toBe('2');
+ folders.push({id:4,name:'Audiobooks'});await client.startScan();await expect(client.albums(0,48)).rejects.toMatchObject({code:'NOT_CONFIGURED'});
+});

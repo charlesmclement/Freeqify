@@ -218,7 +218,7 @@ main,.music-library,.home-dashboard{min-width:0}
  .personal-create input,.library-search input,.account-form input{font-size:16px}
  .personal-tracks>li{padding:14px 12px}
  .personal-track-actions button,.personal-actions button{min-height:44px}
- .mobile-navigation{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));position:fixed;bottom:0;left:0;right:0;z-index:40;min-height:78px;padding:8px 8px calc(9px + env(safe-area-inset-bottom));background:#09130ff5;backdrop-filter:blur(18px);border-top:1px solid #253c2b}
+ .mobile-navigation{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));position:fixed;bottom:0;left:0;right:0;z-index:40;min-height:78px;padding:8px 8px calc(9px + env(safe-area-inset-bottom));background:#09130ff5;backdrop-filter:blur(18px);border-top:1px solid #253c2b}
  .mobile-navigation button{position:relative;border:0;background:none;color:#9eafa5;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:5px;min-height:55px;min-width:0;padding:4px;font-size:11px;cursor:pointer}
  .mobile-navigation button svg{width:24px;height:24px}
  .mobile-navigation button[aria-current]{color:#c6ee9b;text-shadow:0 0 15px #a9f47a55}
@@ -887,3 +887,66 @@ body:has(.shell.has-tools) .music-player{padding-top:4px}
 .mini-player-open .playback-source,.now-playing-track .playback-source { display:block; margin-top:1px; color:#c6ee9b; font-size:9px; line-height:12px; white-space:nowrap; }
 .queue-art { position:relative; }
 .queue-download-badge { position:absolute; right:-2px; bottom:-2px; display:grid; place-items:center; width:12px; height:12px; color:#c6ee9b; background:#0a100d; font-size:10px; line-height:1; }
+
+/* Audiobooks share the existing palette, typography, and mobile control sizes. */
+.music-player[hidden]{display:none!important}
+.audiobook-library{padding-bottom:260px}
+.book-grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}
+.book-card{text-align:left;display:flex;flex-direction:column;gap:8px;min-width:0}
+.book-card strong,.book-dock-title strong{overflow-wrap:anywhere}
+.book-empty{padding:40px 0;max-width:560px}
+.book-heading{display:grid;grid-template-columns:minmax(100px,180px) 1fr;gap:24px;margin:24px 0}
+.book-heading h1{font-size:clamp(1.5rem,4vw,2.8rem);margin:0;overflow-wrap:anywhere}
+.book-heading img{width:100%;aspect-ratio:1;object-fit:cover}
+.audiobook-library progress{width:100%;accent-color:var(--accent,#c6ef68)}
+.book-actions,.book-options,.book-transport{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.book-actions{margin:20px 0}
+.book-list{list-style:none;padding:0}
+.book-list li{display:flex;align-items:center;gap:8px;border-bottom:1px solid #ffffff18;padding:8px 0}
+.book-list li>button:first-child{flex:1;display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:5px;min-width:0;overflow-wrap:anywhere}
+.book-list small{opacity:.7}
+.book-note,.book-metadata{display:grid;gap:12px;margin:24px 0;max-width:700px}
+.book-spoken-headings{margin:16px 0;max-width:760px}
+.book-heading-previews{list-style:none;padding:0;display:grid;gap:16px}
+.book-heading-previews li{display:grid;gap:10px;padding:16px;border:1px solid #ffffff30;border-radius:12px;overflow-wrap:anywhere}
+.book-heading-previews li>button{justify-self:start}
+.book-heading-previews p{margin:0}
+.book-heading-previews input:not([type=checkbox]){width:100%;min-width:0;padding:12px;background:#10201b;color:inherit;border:1px solid #ffffff30;font:inherit}
+.book-heading-choice{display:flex;gap:10px;align-items:center}
+.book-metadata label{display:grid;gap:8px}
+.book-note input,.book-metadata input{width:100%;min-width:0;padding:12px;background:#10201b;color:inherit;border:1px solid #ffffff30;font:inherit}
+.book-management{margin:36px 0}
+.audiobook-dock{position:fixed;z-index:35;bottom:0;left:238px;right:0;background:#0b1914;border-top:1px solid #354d37;padding:12px 24px;display:grid;grid-template-columns:1fr auto;gap:8px 24px;color:#e9efdf}
+.book-dock-title{display:flex;align-items:center;text-align:left;gap:12px;min-width:0}
+.book-dock-cover{display:flex;width:52px;height:60px;flex:0 0 52px;align-items:center;justify-content:center;overflow:hidden}
+.book-dock-cover img{width:100%;height:100%;object-fit:contain}
+.book-dock-metadata{display:flex;flex-direction:column;gap:3px;min-width:0}
+.book-dock-metadata small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.book-dock-title small{color:#c6ef68}
+.book-dock-chapter{font-size:.8rem;opacity:.7}
+.book-seek{grid-column:1/-1;display:flex;gap:12px;align-items:center;font-variant-numeric:tabular-nums;font-size:.8rem}
+.book-seek input{flex:1;min-width:0;accent-color:#c6ef68}
+.book-options{grid-column:1/-1;font-size:.85rem}
+.book-options select{background:#10201b;color:inherit;padding:6px;border:1px solid #ffffff30;font:inherit}
+.audiobook-dock p{grid-column:1/-1;margin:0;font-size:.85rem}
+@media(max-width:1100px){.audiobook-dock{left:200px}}
+@media(max-width:760px), (max-width:980px) and (max-height:500px){.audiobook-dock{left:0;bottom:calc(78px + env(safe-area-inset-bottom,0px));padding:10px 12px;grid-template-columns:1fr;gap:8px}.book-transport{justify-content:center;gap:6px}.book-transport button{min-height:44px;min-width:44px}.book-options{justify-content:center;gap:8px}.book-heading{grid-template-columns:90px 1fr;gap:16px}.audiobook-library{padding-bottom:330px}.book-dock-title strong{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.book-dock-chapter{display:none}}
+.audiobook-library button,.audiobook-dock button{border:1px solid #354b39;background:#152219;color:#d2e6c2;padding:10px 13px;font-size:13px;cursor:pointer;border-radius:0}
+.audiobook-library button:hover,.audiobook-dock button:hover{background:#233426;border-color:#6b8758}
+.audiobook-library button:disabled{opacity:.45;cursor:default}
+.audiobook-library button.account-primary,.audiobook-dock button.account-primary{background:#c6ee9b;color:#142010;border-color:#c6ee9b;font-weight:650}
+.audiobook-dock button.book-dock-title{background:transparent;border:0;padding:0;color:#ecf4e6}
+.audiobook-library .book-list li>button:first-child{background:transparent;border:0;padding:12px 0;color:#e6efdf}
+.book-heading h1{letter-spacing:-.035em}
+.book-options button{padding:7px 10px}
+@media(max-width:760px), (max-width:980px) and (max-height:500px){.audiobook-library button,.audiobook-dock button{min-height:44px}.book-options{font-size:12px}.book-options select{min-height:44px}.book-dock-title strong{font-size:14px}.book-transport button{padding:8px 10px}.book-options button{font-size:12px;padding:8px}.audiobook-dock{gap:6px}}
+.book-volume{position:relative}.book-volume summary{cursor:pointer;padding:10px;border:1px solid #354b39}.book-volume>div{position:absolute;bottom:calc(100% + 8px);left:0;width:180px;padding:12px;background:#10201b;border:1px solid #58704c;box-shadow:0 6px 24px #0008;display:grid;gap:8px}.book-volume input{width:100%;accent-color:#c6ee9b}
+
+@media(max-width:740px){.music-library:not(.audiobook-library)>.library-tabs{grid-template-columns:repeat(5,minmax(0,1fr))}.library-tabs button[data-category=Audiobooks]{order:5}}
+.book-downloads{margin:18px 0;padding:16px;border:1px solid #2d4234;background:#101b15}.book-downloads .book-actions{flex-wrap:wrap}.book-downloads p{margin:8px 0}.book-downloads progress{width:100%}
+
+.book-edit-fields{min-width:0;border:0;padding:0;margin:0}
+
+/* Book sections use content-sized tabs, including on narrow library screens. */
+.audiobook-library .library-tabs{display:flex;flex-wrap:wrap}
+.audiobook-library .library-tabs button{white-space:nowrap}

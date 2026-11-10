@@ -49,3 +49,4 @@ export interface PlaylistDetail { playlist: PlaylistSummary; items: PersonalTrac
 export interface PersonalSummary { playlists: PlaylistSummary[]; favoriteIds: string[]; generation: number }
 export function listeningThreshold(duration: number | null) { return duration && duration > 0 ? Math.max(1, Math.min(30, duration / 2)) : 30; }
 export type { ImportedMetadata, ImportStatus, ImportSummary, ImportEntry, ImportPage, LidarrAlbumChoice, LidarrReview, LidarrStatus, LidarrQueue } from './playlist-import.js';
+export type {Audiobook,BookSummary,BookChapter,BookBookmark,BookCatalogEntry,BookSpokenHeading} from './audiobooks.js';

@@ -9,8 +9,11 @@ function remember(value: unknown) {
   }
 }
 export async function accountRequest<T>(path: string, csrf?: string, input?: unknown, signal?: AbortSignal, recovered = false): Promise<T> {
+  // Explicit book analysis has a bounded server worker that can outlast a normal account request.
+  const deadline=input!==undefined&&/^audiobooks\/[A-Za-z0-9_-]+\/spoken-heading$/.test(path)?100000:
+    input!==undefined&&(path==='audiobooks'||/^audiobooks\/[A-Za-z0-9_-]+\/detect-chapters$/.test(path))?45000:/^library\/artwork\/book\/[A-Za-z0-9_-]+\/(cover-search|shared)$/.test(path)?30000:12000;
   const response = await fetch(`${import.meta.env.BASE_URL}api/${path}`, {
-    credentials: 'same-origin', signal: AbortSignal.any([AbortSignal.timeout(12000), ...(signal ? [signal] : [])]),
+    credentials: 'same-origin', signal: AbortSignal.any([AbortSignal.timeout(deadline), ...(signal ? [signal] : [])]),
     ...(input === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf ?? '' }, body: JSON.stringify(input) }),
   }).catch(error=>{if(!signal?.aborted)window.dispatchEvent(new Event('freeqify:server-unavailable'));throw error;});
   if (!response.ok) {

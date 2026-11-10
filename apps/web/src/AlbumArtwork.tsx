@@ -14,14 +14,14 @@ function neutralCover(albumId:string,preferred?:string|null){
   return cover;
 }
 /** Same album image in library, player and history. Original artists still use their own artwork. */
-type Props={albumId:string|null;artworkId:string|null;label:string;player?:boolean};
+type Props={albumId:string|null;artworkId:string|null;label:string;player?:boolean;kind?:'album'|'book'};
 export function AlbumArtwork(props:Props){
   const saved=useLocalArtwork(props.albumId,props.artworkId);
   const account=useOptionalAccount();
   if(saved&&account?.offline)return <SavedArtwork blob={saved} label={props.label} player={props.player??false}/>;
-  return <AlbumArtworkImage key={`${props.albumId??'no-album'}:${props.artworkId??'no-art'}`} {...props}/>;
+  return <AlbumArtworkImage key={`${props.kind??'album'}:${props.albumId??'no-album'}:${props.artworkId??'no-art'}`} {...props}/>;
 }
-function AlbumArtworkImage({albumId,artworkId,label,player=false}:Props) {
+function AlbumArtworkImage({albumId,artworkId,label,player=false,kind='album'}:Props) {
   const retries=useRef(0);
   const [revision,setRevision]=useState(0);
   const [missing,setMissing]=useState(false);
@@ -53,7 +53,7 @@ function AlbumArtworkImage({albumId,artworkId,label,player=false}:Props) {
     const timer=window.setTimeout(()=>{setFallback(false);setMissing(false);setRevision(value=>value+1);},1500+Math.random()*2000);
     return ()=>window.clearTimeout(timer);
   },[missing,noArtwork]);
-  const url=albumId?libraryUrl(`artwork/album/${encodeURIComponent(albumId)}?revision=${revision}`):artworkId?libraryUrl(`artwork/${encodeURIComponent(artworkId)}`):null;
+  const url=albumId?libraryUrl(`artwork/${kind}/${encodeURIComponent(albumId)}?revision=${revision}`):artworkId?libraryUrl(`artwork/${encodeURIComponent(artworkId)}`):null;
   if(missing&&albumId&&fallback&&!noArtwork&&!fallbackBroken){
     // Stable, neutral fallback while genuine artwork is temporarily unreachable.
     const source=`${import.meta.env.BASE_URL}freeqify-covers/${coverKey}`;

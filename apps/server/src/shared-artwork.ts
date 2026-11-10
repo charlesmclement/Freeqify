@@ -18,7 +18,9 @@ export function sharedCover(auth:AuthStore,album:string) {
 }
 
 /** Registered inside artwork's authenticated, CSRF-protected plugin. */
-export function registerSharedArtwork(routes:FastifyInstance,auth:AuthStore,library:MusicLibrary,provider:CoverSearchProvider|null) {
+export function registerSharedArtwork(routes:FastifyInstance,auth:AuthStore,library:MusicLibrary,provider:CoverSearchProvider|null,kind:'album'|'book'='album') {
+  const path=`/artwork/${kind}/:id`;
+  const detail=(id:string)=>kind==='book'?library.audiobookAlbum?library.audiobookAlbum(id):Promise.reject(new AuthError(503,'BOOK_SOURCE_NOT_CONFIGURED','Audiobooks source is unavailable.')):library.album(id);
   const previews=new Map<string,Preview>();
   const admission=new Admission(2,1);
   routes.addHook('onClose',async()=>{previews.clear();});
@@ -58,19 +60,19 @@ export function registerSharedArtwork(routes:FastifyInstance,auth:AuthStore,libr
     if(art.bytes.length>3*1024*1024||!imageType(art.bytes,art.contentType))throw invalid();
     entry.artwork=art;return art;
   }
-  routes.get('/artwork/album/:id/shared',async request=>{
+  routes.get(`${path}/shared`,async request=>{
     admin(request);const cover=sharedCover(auth,album(request));
     return {enabled:!!provider,selected:!!cover,artist:cover?.artist??null,title:cover?.title??null};
   });
-  routes.post('/artwork/album/:id/cover-search',{bodyLimit:2000},async request=>{
+  routes.post(`${path}/cover-search`,{bodyLimit:2000},async request=>{
     const user=admin(request),id=album(request),value=body(request);
     if(typeof value.artist!=='string'||typeof value.album!=='string'||!value.album.trim()
       ||value.artist.length>200||value.album.length>200||Object.keys(value).some(key=>key!=='artist'&&key!=='album'))throw invalid();
-    if(!provider)throw new AuthError(503,'ARTWORK_DISABLED','Online cover search requires MUSICBRAINZ_CONTACT on the server.');
+    if(!provider)throw new AuthError(503,'ARTWORK_DISABLED',`Online cover search requires ${kind==='book'?'AUDIOBOOKS_COVER_CONTACT':'MUSICBRAINZ_CONTACT'} on the server.`);
     auth.limit(`cover-search:${user}`,1,5000);
     const release=admission.acquire(user);
     try{
-      await library.album(id);admin(request);
+      await detail(id);admin(request);
       const result=await provider.search(value.artist.trim(),value.album.trim());admin(request);
       if(result.kind!=='results')throw new AuthError(503,'ARTWORK_UNAVAILABLE','Cover search is temporarily unavailable. Try again.');
       prune();
@@ -84,19 +86,19 @@ export function registerSharedArtwork(routes:FastifyInstance,auth:AuthStore,libr
       return {items};
     }finally{release();}
   });
-  routes.get('/artwork/album/:id/cover-preview/:token',async(request,reply)=>{
+  routes.get(`${path}/cover-preview/:token`,async(request,reply)=>{
     const entry=preview(request,(request.params as Record<string,unknown>).token);
     const art=await load(request,entry);admin(request);
     return reply.type(art.contentType).send(art.bytes);
   });
-  routes.post('/artwork/album/:id/shared',{bodyLimit:2000},async request=>{
+  routes.post(`${path}/shared`,{bodyLimit:2000},async request=>{
     const uid=admin(request),id=album(request),value=body(request);
     if(value.mode==='remove'&&Object.keys(value).length===1){
       auth.db.prepare('DELETE FROM shared_album_artwork WHERE album_id=?').run(id);return {ok:true};
     }
     if(value.mode!=='select'||Object.keys(value).some(key=>key!=='mode'&&key!=='token'))throw invalid();
     const entry=preview(request,value.token);
-    await library.album(id);admin(request);
+    await detail(id);admin(request);
     const art=await load(request,entry);preview(request,value.token);
     // Keep shared storage bounded, without charging or exposing another user's private data.
     auth.db.exec('BEGIN IMMEDIATE');

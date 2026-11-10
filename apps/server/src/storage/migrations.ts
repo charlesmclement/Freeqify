@@ -165,7 +165,14 @@ CREATE TABLE library_removed_members (
  FOREIGN KEY(source,kind,album_id) REFERENCES library_removals(source,kind,id) ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX library_removed_track ON library_removed_members(source,track_id);
-`}];
+`}, {version:13,sql:`
+CREATE TABLE audiobooks (
+ id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ album_id TEXT NOT NULL,payload TEXT NOT NULL,updated_at INTEGER NOT NULL,
+ UNIQUE(user_id,album_id)
+) STRICT;
+CREATE INDEX audiobooks_owner ON audiobooks(user_id,updated_at DESC,id);
+`+usageTriggers('audiobooks','length(CAST(ROW.payload AS BLOB))+512')}];
 /** Trusted migration identifiers/expressions only; never caller supplied. */
 function usageTriggers(table:string,expression:string){
  const value=(row:string)=>expression.replaceAll('ROW.',row+'.');

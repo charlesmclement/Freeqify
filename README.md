@@ -15,6 +15,8 @@ Navidrome catalog. Bring your own legally obtained music; no music is bundled.
 - Mobile layouts and an installable progressive web app.
 - Explicit device downloads and offline playback of saved music, subject to browser storage limits.
 - Personal artwork choices and optional administrator cover search.
+- Separate audiobook catalog, chapters, private bookmarks and resume, playback speed, sleep timer, and optional device downloads.
+- Optional local Whisper recognition of spoken chapter headings, with review before saving.
 
 This is an actively developed project. There is no public demo or hosted service.
 Publishing the source does not expose an existing installation.
@@ -76,7 +78,7 @@ This runs lint, all workspace TypeScript checks, automated tests, and production
 builds. The npm workspaces are `apps/web`, `apps/server`, and `packages/shared`.
 Shared code contains public contracts only.
 
-See [architecture](docs/architecture.md),
+See [audiobook setup](docs/audiobooks.md), [architecture](docs/architecture.md),
 [personal library API](docs/personal-api.md), and
 [Linux installation preparation](docs/linux-installation.md).
 
@@ -103,3 +105,6 @@ software license.
 Session defaults are 30 days (`SESSION_HOURS=720`, `SESSION_IDLE_MINUTES=43200`). Each successful login creates a fresh 30-day session; logout, password changes and administrative revocation still invalidate it immediately. Existing explicit configuration keeps its selected lifetime; update those two settings to use the longer lifetime. Existing sessions retain their original expiry until you sign in again.
 
 Temporary connection failures automatically retry session verification every five seconds while disconnected, including when the browser still reports online. Returning to the app also retries. Ready audio stays attached; an interrupted song retries after the same account reconnects.
+
+Audiobooks also support optional Open Library covers and a persistent bottom player
+with cover, author, title and chapter. See [audiobook configuration](docs/audiobooks.md).

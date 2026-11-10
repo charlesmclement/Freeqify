@@ -1,3 +1,5 @@
+import {useAudiobook} from './AudiobookContext.js';
+import type {Audiobook} from '@freeqify/shared';
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -123,6 +125,19 @@ it('shows earlier queue songs and replays one without replacing the queue or aud
  fireEvent.click(screen.getByRole('button',{name:'Show playback queue'}));fireEvent.click(screen.getByRole('button',{name:'Earlier (2)'}));
  const earlier=screen.getByLabelText('Earlier in this queue');await waitFor(()=>expect(earlier).toHaveTextContent('Song 0'));
  fireEvent.click(screen.getByRole('button',{name:'Play Song 0'}));await waitFor(()=>expect(element().src).toContain('/stream/t0'));expect(element()).toBe(audio);expect(document.querySelectorAll('.queue-scroll li')).toHaveLength(3);
+});
+
+it('keeps one audio element and the music queue when entering and leaving an audiobook',async()=>{
+ const book:Audiobook={id:'book',title:'Book',author:'Author',narrator:'',series:'',description:'',albumId:'book-album',artworkId:null,status:'listening',partId:'book-part',position:70000,speed:1.5,revision:0,updatedAt:0,partCount:1,duration:90000,parts:[{...tracks[0]!,id:'book-part',albumId:'book-album',title:'Book part',duration:90000}],chapters:[{id:'part-boundary',partId:'book-part',title:'Part one',position:0,kind:'part'}],bookmarks:[]};
+ function Books(){const b=useAudiobook();return <button onClick={()=>b?.start(book)}>Start test book</button>;}
+ const restored={...emptyPlayback(),queue:[{key:'saved',source:'local' as const,trackId:'t1'}],order:['saved'],current:'saved',position:20};
+ vi.stubGlobal('fetch',vi.fn(async(url:string)=>({ok:true,json:async()=>url.endsWith('/auth/session')?{user,csrf:'a'.repeat(64),expiresAt:Date.now()+3600000}:url.endsWith('/playback')?restored:tracks.find(t=>url.endsWith(t.id))??{}})));
+ render(<AccountProvider><Playback><Books/></Playback></AccountProvider>);
+ await waitFor(()=>expect(element()?.src).toContain('/stream/t1'));const audio=element();
+ fireEvent.click(screen.getByText('Start test book'));await waitFor(()=>expect(audio.src).toContain('/stream/book-part?format=raw'));
+ expect(document.querySelectorAll('audio')).toHaveLength(1);expect(screen.getByRole('region',{name:'Audiobook player'})).toBeVisible();expect(screen.queryByRole('button',{name:'Shuffle'})).not.toBeInTheDocument();
+ Object.defineProperty(audio,'duration',{configurable:true,value:90000});Object.defineProperty(audio,'seekable',{configurable:true,value:{length:1,start:()=>0,end:()=>90000}});fireEvent.loadedMetadata(audio);expect(audio.currentTime).toBe(70000);expect(audio.playbackRate).toBe(1.5);
+ fireEvent.click(screen.getByRole('button',{name:'Return to music'}));await waitFor(()=>expect(audio.src).toContain('/stream/t1'));fireEvent.loadedMetadata(audio);expect(audio.currentTime).toBe(20);expect(audio.playbackRate).toBe(1);expect(element()).toBe(audio);expect(screen.queryByRole('region',{name:'Audiobook player'})).not.toBeInTheDocument();
 });
 
 it('keeps the persistent player and prepared audio attached during manual session rechecks',async()=>{

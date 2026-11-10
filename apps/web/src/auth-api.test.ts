@@ -36,3 +36,13 @@ it('bounds a stalled account request and signals recovery without signing out or
   expect(fetcher).toHaveBeenCalledOnce();expect(unavailable).toHaveBeenCalledOnce();expect(logout).not.toHaveBeenCalled();
  }finally{deadline.mockRestore();vi.useRealTimers();window.removeEventListener('freeqify:server-unavailable',unavailable);window.removeEventListener('freeqify:unauthenticated',logout);}
 });
+
+it.each(['audiobooks/book-id/spoken-heading','audiobooks/book-id/detect-chapters','audiobooks','library/artwork/book/book-id/cover-search'])('lets explicit book analysis finish after the normal account deadline: %s',async path=>{
+ vi.useFakeTimers();
+ const deadline=vi.spyOn(AbortSignal,'timeout').mockImplementation(ms=>{const controller=new AbortController();setTimeout(()=>controller.abort(new DOMException('Timed out','TimeoutError')),ms);return controller.signal;});
+ vi.stubGlobal('fetch',vi.fn((_url,init:RequestInit)=>new Promise((resolve,reject)=>{
+  init.signal!.addEventListener('abort',()=>reject(init.signal!.reason));setTimeout(()=>resolve(json({ok:true})),20000);
+ })));
+ try{const result=accountRequest(path,'a'.repeat(64),{});await vi.advanceTimersByTimeAsync(20000);expect(await result).toEqual({ok:true});}
+ finally{deadline.mockRestore();vi.useRealTimers();}
+});
