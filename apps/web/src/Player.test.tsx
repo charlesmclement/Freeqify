@@ -137,7 +137,7 @@ it('keeps one audio element and the music queue when entering and leaving an aud
  fireEvent.click(screen.getByText('Start test book'));await waitFor(()=>expect(audio.src).toContain('/stream/book-part?format=raw'));
  expect(document.querySelectorAll('audio')).toHaveLength(1);expect(screen.getByRole('region',{name:'Audiobook player'})).toBeVisible();expect(screen.queryByRole('button',{name:'Shuffle'})).not.toBeInTheDocument();
  const dock=document.querySelector('.music-player')!;expect(dock).toHaveClass('is-audiobook');expect(dock).toHaveTextContent('Book');
- fireEvent.click(screen.getByRole('button',{name:'Open Now Playing'}));const dialog=await screen.findByRole('dialog',{name:'Now Playing'});expect(dialog).toHaveTextContent('Book');expect(dialog).toHaveTextContent('Author');expect(dialog).not.toHaveTextContent('Song 1');expect(dialog.querySelector('.now-playing-art img')).toHaveAttribute('src',expect.stringContaining('/artwork/book/book-album'));
+ fireEvent.click(screen.getByRole('button',{name:'Open Now Playing'}));const dialog=await screen.findByRole('dialog',{name:'Now Playing'});expect(dialog).toHaveTextContent('Book');expect(dialog).toHaveTextContent('Author');expect(dialog).not.toHaveTextContent('Song 1');expect(screen.queryByRole('button',{name:'Lyrics'})).toBeNull();expect(dialog.querySelector('.now-playing-art img')).toHaveAttribute('src',expect.stringContaining('/artwork/book/book-album'));
  const loads=vi.mocked(HTMLMediaElement.prototype.load).mock.calls.length;fireEvent.click(screen.getByRole('button',{name:'Close Now Playing'}));expect(element()).toBe(audio);expect(document.querySelector('.music-player')).toBe(dock);expect(vi.mocked(HTMLMediaElement.prototype.load)).toHaveBeenCalledTimes(loads);
  Object.defineProperty(audio,'duration',{configurable:true,value:90000});Object.defineProperty(audio,'seekable',{configurable:true,value:{length:1,start:()=>0,end:()=>90000}});fireEvent.loadedMetadata(audio);expect(audio.currentTime).toBe(70000);expect(audio.playbackRate).toBe(1.5);
  fireEvent.click(screen.getByRole('button',{name:'Show book chapters'}));fireEvent.click(screen.getByRole('button',{name:'Return to music'}));await waitFor(()=>expect(audio.src).toContain('/stream/t1'));fireEvent.loadedMetadata(audio);expect(audio.currentTime).toBe(20);expect(audio.playbackRate).toBe(1);expect(element()).toBe(audio);expect(screen.queryByRole('region',{name:'Audiobook player'})).not.toBeInTheDocument();
@@ -164,4 +164,13 @@ it('retries an interrupted selected song after verified server recovery',async()
  await waitFor(()=>expect(audio.src).toContain('/stream/t0'));
  expect(element()).toBe(audio);expect(screen.queryByText('Connection dropped')).toBeNull();
  expect(HTMLMediaElement.prototype.play).toHaveBeenCalled();
+});
+
+it('opens lyrics only on request and seeks the same audio element without replacing its queue',async()=>{
+ const fetcher=setup(emptyPlayback(),true);await waitFor(()=>expect(screen.getByText('Find your frequency')).toBeVisible());fireEvent.click(screen.getByText('Start album'));await waitFor(()=>expect(element().src).toContain('/stream/t0'));
+ const audio=element(),source=audio.src;Object.defineProperty(audio,'duration',{configurable:true,value:120});Object.defineProperty(audio,'seekable',{configurable:true,value:{length:1,start:()=>0,end:()=>120}});fireEvent.loadedMetadata(audio);fireEvent.progress(audio);
+ expect(fetcher.mock.calls.some(([url])=>String(url).endsWith('/lyrics'))).toBe(false);
+ const original=fetcher.getMockImplementation()!;fetcher.mockImplementation(async(url:string,...rest:unknown[])=>url.endsWith('/lyrics')?{ok:true,json:async()=>({status:'synced',provider:'LRCLIB',recordId:1,text:'',lines:[{time:10,text:'Fixture lyric'}]})}:original(url,...rest));
+ fireEvent.click(screen.getByRole('button',{name:'Open Now Playing'}));fireEvent.click(await screen.findByRole('button',{name:'Lyrics'}));fireEvent.click(await screen.findByRole('button',{name:'Fixture lyric'}));expect(audio.currentTime).toBe(10);expect(element()).toBe(audio);expect(audio.src).toBe(source);expect(document.querySelectorAll('audio')).toHaveLength(1);
+ fireEvent.click(screen.getByRole('button',{name:'Lyrics'}));expect(screen.queryByRole('region',{name:'Song lyrics'})).toBeNull();expect(audio.src).toBe(source);
 });

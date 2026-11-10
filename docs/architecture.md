@@ -1135,3 +1135,29 @@ Audiobooks now use the same bottom Now Playing bar and expanded listening view a
 Tap the book title to open Now Playing. The book button opens chapters and options
 for speed, sleep, bookmarks, volume and returning to the saved music queue. Opening
 or closing either view preserves the current audio source and listening position.
+
+## Optional synchronized lyrics
+
+`LYRICS_ENABLED` defaults to false. The authenticated GET
+`/api/library/tracks/:id/lyrics` resolves metadata from the existing catalog and
+accepts no provider URL, arbitrary search string or filesystem path. It rechecks
+active sessions and catalog removals before returning. Browser requests and media
+remain same-origin; the server alone contacts fixed HTTPS `lrclib.net/api/get`,
+with redirects disabled and a Freeqify User-Agent. No account or API key is required.
+
+Title/artist equality and a two-second duration tolerance guard automatic matches.
+A missing album-specific match may retry without album; the same identity checks
+still apply. LRC parsing supports repeated timestamps, offsets and blank gaps,
+with bounded text/line counts. Plain lyrics never receive guessed timings.
+Only explicit Lyrics viewing triggers lookup. Global provider concurrency is one,
+responses cap at 256 KiB, lookups have an eight-second deadline, and an in-memory
+128-entry cache expires matches in 24 hours and misses in 15 minutes. Transient
+failures are not cached; 429 Retry-After sets a shared cooldown with jitter.
+No lyrics are persisted in SQLite, device downloads or the PWA cache.
+
+Now Playing conditionally replaces its visualization with a lyrics panel while
+retaining the existing audio element, controls, queue and book behavior. Highlighting
+uses actual playback time, including pauses and seeks; manual scrolling suspends
+auto-follow until requested. Timing adjustment is ephemeral. Track changes abort
+old requests and unmount stale text; logout removes the player. Failure, disabled,
+missing, instrumental and untimed states are explicit.

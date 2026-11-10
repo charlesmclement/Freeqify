@@ -6,6 +6,7 @@ export const projectRoot = fileURLToPath(new URL('../../../', import.meta.url));
 export interface Config {
   proxy?: { origin: string; peer: string };
   resources: ResourceLimits;
+  lyricsEnabled: boolean;
   downloadFfmpegPath: string;
   host: string; port: number; basePath: string; dataDir: string;
   webDistDir: string; devAllowedHosts: string[];
@@ -18,6 +19,7 @@ export interface Config {
   musicbrainz: { contact: string; reviewDir: string };
 }
 export function readConfig(env: NodeJS.ProcessEnv = process.env, root = projectRoot): Config {
+  if(env.LYRICS_ENABLED!==undefined&&!['true','false'].includes(env.LYRICS_ENABLED))throw new Error('LYRICS_ENABLED must be true or false');
   const rawPort = env.PORT ?? '3000';
   if (!/^\d+$/.test(rawPort) || Number(rawPort) < 1 || Number(rawPort) > 65535) {
     throw new Error('PORT must be an integer from 1 to 65535');
@@ -82,6 +84,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env, root = projectR
   return {
     ...(proxy ? {proxy} : {}),
     resources,
+    lyricsEnabled:env.LYRICS_ENABLED==='true',
     ...(env.AUDIOBOOKS_SPEECH_PYTHON?.trim()&&env.AUDIOBOOKS_SPEECH_MODEL?.trim()?{audiobookSpeech:{
       python:env.AUDIOBOOKS_SPEECH_PYTHON.includes('/')?resolve(root,env.AUDIOBOOKS_SPEECH_PYTHON.trim()):env.AUDIOBOOKS_SPEECH_PYTHON.trim(),
       model:resolve(root,env.AUDIOBOOKS_SPEECH_MODEL.trim()),

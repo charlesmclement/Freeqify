@@ -1,3 +1,4 @@
+import {LyricsPanel} from './LyricsPanel.js';
 import {useBookDownloads} from './BookDownloadsContext.js';
 import {AudiobookContext} from './AudiobookContext.js';
 import {AudiobookTransport,AudiobookProgress,AudiobookOptions,AudiobookChapters} from './AudiobookControls.js';
@@ -43,6 +44,7 @@ function Player({ children }: { children: ReactNode }) {
   const currentKey = state.current;
   const [ready, setReady] = useState(account.offline);
   const [playing, setPlaying] = useState(false);
+  const [lyricsOpen,setLyricsOpen]=useState(false);
   const [format, setFormat] = useState<'raw' | 'mp3'>('raw');
   const offlineMode=useRef(account.offline);offlineMode.current=account.offline;
   const [localStore]=useState(()=>new OfflineStore(userId));
@@ -120,7 +122,7 @@ function Player({ children }: { children: ReactNode }) {
   },[fullOpen,immersive,mainSurface]);
   // Activity only updates React when chrome visibility changes, never on animation frames.
   useEffect(()=>{
-    if(!fullOpen||!immersive||!mediaPlaying||queueOpen)return;
+    if(!fullOpen||!immersive||!mediaPlaying||queueOpen||(lyricsOpen&&!bookActive))return;
     const dialog=fullDialog.current;if(!dialog)return;let timer:ReturnType<typeof setTimeout>;
     const schedule=()=>{clearTimeout(timer);timer=setTimeout(()=>{
       if(dialog.querySelector('details[open]')||dialog.querySelector('button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible')){schedule();return;}
@@ -130,7 +132,7 @@ function Player({ children }: { children: ReactNode }) {
     for(const event of ['pointermove','pointerdown','keydown','focusin'])dialog.addEventListener(event,reveal);
     schedule();
     return()=>{clearTimeout(timer);for(const event of ['pointermove','pointerdown','keydown','focusin'])dialog.removeEventListener(event,reveal);};
-  },[fullOpen,immersive,mediaPlaying,queueOpen]);
+  },[fullOpen,immersive,mediaPlaying,queueOpen,lyricsOpen,bookActive]);
   function toggleImmersive(){setChromeIdle(false);setQueueOpen(false);setImmersive(value=>!value);}
   function update(next: PlaybackState) {
     const previous=latest.current;
@@ -372,15 +374,15 @@ function Player({ children }: { children: ReactNode }) {
       if(event.key.toLowerCase()==='f'){event.preventDefault();toggleImmersive();}
       if(event.key==='ArrowLeft'||event.key==='ArrowRight'){const seconds=event.key==='ArrowRight'?5:-5;if(bookActive){event.preventDefault();books.skip(seconds);}else if(seekable&&audio.current){event.preventDefault();audio.current.currentTime=Math.max(0,Math.min(length,audio.current.currentTime+seconds));}}
     }}>
-      <div className="now-playing-header"><button aria-label="Close Now Playing" onClick={closeNowPlaying}><Icon name="back"/></button><span><span className="brand-mark">≋</span> Freeqify<span className="brand-dot">.</span><small>THE LISTENING ROOM</small></span><div className="listening-header-actions"><button className="immersive-toggle" aria-pressed={immersive} onClick={toggleImmersive}>{immersive?'Exit immersive view':'Immersive view'} <span aria-hidden="true">{immersive?'↙':'↗'}</span></button><button aria-label={bookActive?'Show book chapters':'Show playback queue'} aria-expanded={queueOpen} onClick={()=>{setChromeIdle(false);setQueueOpen(!queueOpen);}}><Icon name={bookActive?'book':'queue'}/></button></div></div>
+      <div className="now-playing-header"><button aria-label="Close Now Playing" onClick={closeNowPlaying}><Icon name="back"/></button><span><span className="brand-mark">≋</span> Freeqify<span className="brand-dot">.</span><small>THE LISTENING ROOM</small></span><div className="listening-header-actions">{!bookActive&&current&&<button aria-label="Lyrics" aria-pressed={lyricsOpen} onClick={()=>{setLyricsOpen(value=>!value);setChromeIdle(false);}}>Lyrics</button>}<button className="immersive-toggle" aria-pressed={immersive} onClick={toggleImmersive}>{immersive?'Exit immersive view':'Immersive view'} <span aria-hidden="true">{immersive?'↙':'↗'}</span></button><button aria-label={bookActive?'Show book chapters':'Show playback queue'} aria-expanded={queueOpen} onClick={()=>{setChromeIdle(false);setQueueOpen(!queueOpen);}}><Icon name={bookActive?'book':'queue'}/></button></div></div>
       <div className="now-playing-label"><span className="eyebrow">ON YOUR FREQUENCY</span><h2 id="now-playing-title">Now Playing</h2></div>
-      {fullOpen&&<MusicVisualizer audio={audio} active={fullOpen} playing={mediaPlaying} user={account.state!.user!.id} expanded={immersive} onExpand={toggleImmersive}/>}
+      {fullOpen&&(lyricsOpen&&!bookActive&&current?<LyricsPanel key={`${current.trackId}:${account.offline}`} trackId={current.trackId} position={state.position} duration={length} seekable={seekable&&length>0} offline={account.offline} onSeek={position=>{if(audio.current&&seekable){audio.current.currentTime=position;update({...latest.current,position});}}}/>:<MusicVisualizer audio={audio} active={fullOpen} playing={mediaPlaying} user={account.state!.user!.id} expanded={immersive} onExpand={toggleImmersive}/>)}
       <div className="now-playing-companion">
       <div className="now-playing-art"><AlbumArtwork kind={bookActive?'book':'album'} albumId={book?.albumId??track?.albumId??null} artworkId={book?book.artworkId:track?.artworkId??null} label={book?.title??track?.album??'Album'}/></div>
       <div className="now-playing-track"><div><h3>{book?.title??track?.title??'Loading track…'}</h3><p>{book?.author??track?.artist??'Loading artist…'}</p><small>{book?bookChapter?.title:track?.album}</small>{sourceIndicator()}</div>{!bookActive&&track&&<TrackActions track={track}/>}</div>
       {(!mainSurface||immersive)&&<div className="now-playing-transport">{progress()}{transport()}</div>}
       {book?<button className="up-next" disabled={!nextChapter} onClick={()=>{if(nextChapter)books.go(nextChapter);}}><span className="up-next-icon"><Icon name="book"/></span><span><small>Next chapter</small><strong>{nextChapter?.title??'End of book'}</strong></span><Icon name="next"/></button>:<button className="up-next" disabled={!nextItem} onClick={()=>move(1)}><span className="up-next-icon"><Icon name="queue"/></span><span><small>Up Next</small><strong>{nextItem?nextTrack?.title??'Loading next track…':'End of queue'}</strong>{nextTrack&&<small>{nextTrack.artist}</small>}</span><Icon name="next"/></button>}
-      {book?<details className="full-player-options"><summary>Book options</summary><AudiobookOptions/></details>:<details className="full-player-options"><summary>Playback options</summary><label>Volume<input aria-label="Now Playing volume" type="range" min="0" max="1" step="0.01" value={state.volume} onChange={event=>update({...latest.current,volume:Number(event.target.value),muted:false})}/></label><button onClick={()=>update({...latest.current,muted:!state.muted})}>{state.muted?'Unmute':'Mute'}</button>{current&&format==='raw'&&<button onClick={()=>{restorePosition.current=state.position;setFormat('mp3');}}>MP3 compatibility</button>}<p>Playback starts with a safety buffer while the rest downloads. Unprepared songs may use MP3 compatibility; prepared songs keep their original audio. The next song prepares automatically in temporary memory.</p>{current&&<button onClick={()=>{restorePosition.current=latest.current.position;setBufferRevision(n=>n+1);}}>Retry song</button>}<p>Lyrics are not available for this library.</p></details>}
+      {book?<details className="full-player-options"><summary>Book options</summary><AudiobookOptions/></details>:<details className="full-player-options"><summary>Playback options</summary><label>Volume<input aria-label="Now Playing volume" type="range" min="0" max="1" step="0.01" value={state.volume} onChange={event=>update({...latest.current,volume:Number(event.target.value),muted:false})}/></label><button onClick={()=>update({...latest.current,muted:!state.muted})}>{state.muted?'Unmute':'Mute'}</button>{current&&format==='raw'&&<button onClick={()=>{restorePosition.current=state.position;setFormat('mp3');}}>MP3 compatibility</button>}<p>Playback starts with a safety buffer while the rest downloads. Unprepared songs may use MP3 compatibility; prepared songs keep their original audio. The next song prepares automatically in temporary memory.</p>{current&&<button onClick={()=>{restorePosition.current=latest.current.position;setBufferRevision(n=>n+1);}}>Retry song</button>}</details>}
       {!bookActive&&bufferStatus&&<p className="player-message" role="status">{bufferStatus}</p>}{!bookActive&&message&&<p className="player-message" role="status">{message}</p>}{!bookActive&&history.error&&<p className="player-message">{history.error}</p>}
       {bookActive&&bookState.error&&<p className="player-message" role="alert">{bookState.error}</p>}
       <div className={`full-queue queue-slide ${queueOpen&&!dockAvailable?'is-open':''}`} aria-label={bookActive?'Book chapters':'Up Next queue'} aria-hidden={!queueOpen||dockAvailable} inert={!queueOpen||dockAvailable}>{queueOpen&&!dockAvailable&&queueContents()}</div>

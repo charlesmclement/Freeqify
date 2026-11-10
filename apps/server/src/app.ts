@@ -1,3 +1,5 @@
+import {registerLyricsRoutes} from './lyrics-routes.js';
+import type {LyricsProvider} from './lyrics.js';
 import {registerAudiobookRoutes} from './audiobook-routes.js';
 import {LibraryRemovals,removableLibrary} from './library-removals.js';
 import {registerImportRoutes} from './import-routes.js';
@@ -19,7 +21,7 @@ import type {AlbumIntegration} from './integrations/lidarr.js';
 import type { HealthResponse } from '@freeqify/shared';
 import { projectRoot, type Config } from './config.js';
 
-export async function createApp(config: Config, options: { dev?: boolean; logger?: boolean; library?: MusicLibrary; authStore?: AuthStore; lidarr?:AlbumIntegration } = {}) {
+export async function createApp(config: Config, options: { dev?: boolean; logger?: boolean; library?: MusicLibrary; lyrics?:LyricsProvider; authStore?: AuthStore; lidarr?:AlbumIntegration } = {}) {
   if (!loopbackHosts.includes(config.host)) throw new Error('Phase 2 requires a loopback HOST until the deployment phase');
   if (config.proxy && options.dev) throw new Error('Proxy mode cannot serve development middleware');
   const app = Fastify({requestTimeout:30000,connectionTimeout:30000, logger: options.logger ? { serializers: { req: () => ({ method: 'request' }) } } : false, bodyLimit: 16 * 1024 });
@@ -90,6 +92,7 @@ export async function createApp(config: Config, options: { dev?: boolean; logger
   registerImportRoutes(app, `${api}/imports`, authStore, library, config, options.lidarr);
   registerAudiobookRoutes(app, `${api}/audiobooks`, authStore, library, config);
   registerPersonalRoutes(app, `${api}/personal`, authStore, library, config);
+  registerLyricsRoutes(app, `${api}/library`, config, authStore, library, removals, options.lyrics);
   registerLibraryRoutes(app, `${api}/library`, library, authStore, config, removals);
   registerArtworkRoutes(app, `${api}/library`, library, authStore, config);
   registerMediaRoutes(app, `${api}/library`, library, authStore, config.navidrome.timeoutMs,1000,config.resources,id=>!removals.blocks(id),config.downloadFfmpegPath);

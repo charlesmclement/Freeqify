@@ -113,3 +113,18 @@ Audiobooks now use the same bottom Now Playing bar and expanded listening view a
 Tap the book title to open Now Playing. The book button opens chapters and options
 for speed, sleep, bookmarks, volume and returning to the saved music queue. Opening
 or closing either view preserves the current audio source and listening position.
+
+### Optional free synchronized lyrics
+
+Set `LYRICS_ENABLED=true` on the server to enable LRCLIB in **Now Playing → Lyrics**.
+No paid plan, account, API key or AI transcription is needed. Requests use only the
+song title, artist, album and duration; audio stays on your music server. Freeqify
+checks the returned identity and duration before showing lyrics. Songs without a
+matching timed version display available plain lyrics, an instrumental label, or
+a clear missing result. Music playback never depends on the provider.
+
+The current line follows playback; tap a line to seek. Scroll to browse and use
+**Follow lyrics** to resume following. **Earlier/Later** adjusts timing for the
+current song without modifying its file or saved metadata. Lyrics are online only.
+The server keeps a bounded temporary cache, honors provider retry delays, and
+never scans the entire library. See [LRCLIB documentation](https://lrclib.net/docs).

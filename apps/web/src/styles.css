@@ -958,3 +958,22 @@ body:has(.shell.has-tools) .music-player{padding-top:4px}
  .book-player-tray button,.book-player-tray select{min-height:44px}
  .music-player .book-transport>button{font-size:11px}
 }
+
+/* Optional lyrics share Now Playing's existing controls and audio owner. */
+.lyrics-panel{grid-column:1;grid-row:2;display:flex;flex-direction:column;min-height:0;width:100%;min-width:0;border:1px solid #334b37;background:#101b14;padding:20px;border-radius:0}
+.lyrics-heading,.lyrics-footer,.lyrics-timing{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.lyrics-heading h3{margin:0;font-size:18px}.lyrics-timing{gap:4px;font-size:12px}
+.lyrics-timing button,.lyrics-footer button,.lyrics-message button{padding:6px 9px;border:1px solid #334b37;border-radius:0}
+.lyrics-scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;margin:16px 0;scrollbar-width:thin;outline-offset:3px}
+.lyrics-scroll ol{list-style:none;margin:0;padding:15vh 0}.lyrics-scroll li{margin:0;padding:8px 0}
+.lyrics-scroll li button{display:block;width:100%;text-align:left;font:inherit;font-size:clamp(20px,2.5vw,30px);font-weight:650;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;color:#a5b7a8;padding:0;background:none;border:0}
+.lyrics-scroll li button:disabled{opacity:1;cursor:default}.lyrics-scroll li.is-current button{color:#c6ee9b}
+.lyrics-scroll li button:focus-visible{outline:2px solid #c6ee9b;outline-offset:3px}.lyrics-gap{font-size:24px;color:#a5b7a8}
+.lyrics-plain{white-space:pre-wrap;overflow-wrap:anywhere;font-size:20px;line-height:1.8;margin:0}
+.lyrics-caption,.lyrics-footer,.lyrics-message{font-size:13px;color:#a5b7a8}.lyrics-message{padding:36px 0;line-height:1.8}
+.lyrics-footer a{color:#c6ee9b;text-decoration:underline;text-underline-offset:3px}
+@media(max-width:760px){.lyrics-panel{padding:14px}.lyrics-timing{font-size:11px}.listening-header-actions{flex-wrap:wrap;justify-content:flex-end}}
+
+.listening-room.player-immersive .lyrics-panel{position:absolute;inset:70px 24px 190px;width:auto}
+@media(max-width:760px){.listening-room.player-immersive .lyrics-panel{inset:60px 12px 220px}}
+@media(max-height:600px) and (min-width:600px){.listening-room.player-immersive .lyrics-panel{inset:50px 12px 130px}}
