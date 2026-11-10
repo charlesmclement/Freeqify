@@ -1130,3 +1130,8 @@ shared cover restores them. Original files are never modified. Covers appear in
 book lists, book details, the persistent bottom player and supported lock screens.
 The optional provider uses fixed HTTPS hosts, bounded responses and rate-limited
 requests; existing music cover lookup remains unchanged.
+
+Audiobooks now use the same bottom Now Playing bar and expanded listening view as music.
+Tap the book title to open Now Playing. The book button opens chapters and options
+for speed, sleep, bookmarks, volume and returning to the saved music queue. Opening
+or closing either view preserves the current audio source and listening position.

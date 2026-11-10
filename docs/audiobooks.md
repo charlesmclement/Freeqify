@@ -78,3 +78,10 @@ the cover. The edition may differ from your audiobook. Use **Edit book cover** t
 search, preview and choose another edition. Administrator-selected shared covers
 apply to everyone. Personal uploads and choices are retained underneath and restored
 when the shared cover is removed. Optional lookup never blocks playback.
+
+Audiobooks now use the same bottom Now Playing bar and expanded listening view as music.
+Tap the book title to open Now Playing. The book button opens chapters and options
+for speed, sleep, bookmarks, volume and returning to the saved music queue. Opening
+or closing either view preserves the current audio source and listening position.
+
+If a book stream fails, Play retries the source at the retained position. Retrying is explicit and does not mark the book finished.

@@ -26,3 +26,20 @@ it('plays downloaded parts offline and persists their progress through the devic
 it('releases a late device Blob without attaching it after the user changes views or sources',async()=>{
  let resolve!:(value:{url:string;release:()=>void})=>void;const release=vi.fn(),pending=new Promise<{url:string;release:()=>void}>(r=>{resolve=r;});const c=new BookController(async()=>null,()=>pending),audio=document.createElement('audio');c.start(book,undefined,undefined,'download');const detach=c.attach(audio);detach();resolve({url:'blob:old-book',release});await pending;await Promise.resolve();expect(release).toHaveBeenCalledTimes(1);expect(audio.getAttribute('src')).toBeNull();
 });
+
+it('resumes an existing suspended visualizer audio path when playing a book',async()=>{
+ const {enableSpectrum,disposeSpectrum}=await import('./audio-spectrum.js');const f=fixture();
+ const source={connect:vi.fn(),disconnect:vi.fn()},analyser={fftSize:0,frequencyBinCount:8,disconnect:vi.fn()};
+ const context={state:'running',destination:{},resume:vi.fn(async()=>{context.state='running';}),close:vi.fn(async()=>{}),createAnalyser:()=>analyser,createMediaElementSource:()=>source};
+ vi.stubGlobal('AudioContext',vi.fn(function(){return context;}));
+ try{await enableSpectrum(f.audio);f.c.pause();context.state='suspended';context.resume.mockClear();f.c.play();expect(context.resume).toHaveBeenCalledOnce();expect(context.state).toBe('running');expect(f.c.state.playing).toBe(true);expect(source.connect.mock.calls.filter(([target])=>target===context.destination)).toHaveLength(1);}
+ finally{disposeSpectrum(f.audio);f.detach();vi.unstubAllGlobals();}
+});
+
+it('retries failed media on explicit Play using the same book and saved position',()=>{
+ const f=fixture();f.audio.currentTime=470;f.audio.dispatchEvent(new Event('timeupdate'));f.audio.dispatchEvent(new Event('error'));
+ expect(f.c.state).toMatchObject({position:470,ready:false,playing:false,loadRevision:0});expect(f.c.waitingToPlay).toBe(false);
+ f.c.play();expect(f.c.state).toMatchObject({position:470,loadRevision:1,error:''});expect(f.c.waitingToPlay).toBe(true);
+ f.detach();const detach=f.c.attach(f.audio);f.audio.dispatchEvent(new Event('loadedmetadata'));
+ expect(f.audio.currentTime).toBe(470);expect(f.c.state.playing).toBe(true);expect(f.c.state.book?.id).toBe(book.id);detach();
+});

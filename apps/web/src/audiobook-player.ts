@@ -1,15 +1,16 @@
+import {resumeSpectrum} from './audio-spectrum.js';
 import type {Audiobook,BookChapter} from '@freeqify/shared';
 export type BookSource='stream'|'download';
 export type BookMedia=string|{url:string;release:()=>void};
 export type BookWrite=(book:Audiobook,action:string,input:Record<string,unknown>,source:BookSource)=>Promise<Audiobook|null>;
-export type BookPlayerState={source:BookSource;book:Audiobook|null;partId:string;position:number;playing:boolean;ready:boolean;error:string;sleepUntil:number|null;endChapter:boolean;volume:number;muted:boolean};
+export type BookPlayerState={source:BookSource;book:Audiobook|null;partId:string;position:number;playing:boolean;ready:boolean;loadRevision:number;error:string;sleepUntil:number|null;endChapter:boolean;volume:number;muted:boolean};
 export function bookTime(seconds:number|null){if(seconds===null)return 'Unknown';const n=Math.max(0,Math.floor(seconds));return `${Math.floor(n/3600)}:${String(Math.floor(n/60)%60).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;}
 export function chapterAt(book:Audiobook,partId:string,position:number){return book.chapters.filter(c=>c.partId===partId&&c.position<=position+0.05).at(-1);}
 export function bookElapsed(book:Audiobook,partId:string,position:number){let elapsed=position;for(const p of book.parts){if(p.id===partId)return elapsed;if(p.duration===null)return null;elapsed+=p.duration;}return null;}
 /** One audio owner. Book sources stream directly; no whole-file buffering or music queue writes. */
 export class BookController {
- state:BookPlayerState={source:'stream',book:null,partId:'',position:0,playing:false,ready:false,error:'',sleepUntil:null,endChapter:false,volume:1,muted:false};
- private online=true;
+ state:BookPlayerState={source:'stream',book:null,partId:'',position:0,playing:false,ready:false,loadRevision:0,error:'',sleepUntil:null,endChapter:false,volume:1,muted:false};
+ private online=true;private mediaFailed=false;
  private listeners=new Set<()=>void>();private audio:HTMLAudioElement|null=null;private attached=false;private wantsPlay=false;
  private session:{book:Audiobook;blocked:boolean;source:BookSource}|null=null;
  private pending:Promise<unknown>=Promise.resolve();private writes=0;private epoch=0;private lastSaved=0;private dirty=false;private blocked=false;private sleepChapter:string|null=null;
@@ -20,7 +21,7 @@ export class BookController {
  setOnline(online:boolean){this.online=online;if(!online&&this.state.book&&this.state.source==='stream'){this.wantsPlay=false;this.audio?.pause();this.patch({playing:false,error:'Audiobook streaming needs a server connection. Your last synced place is saved.'});}}
  setWriter(write:BookWrite){this.write=write;}
  start(book:Audiobook,partId?:string,position?:number,source:BookSource='stream'){
-  this.stop();const epoch=++this.epoch;
+  if(this.audio)resumeSpectrum(this.audio);this.stop();const epoch=++this.epoch;
   if(this.writes){void this.pending.catch(()=>{}).then(()=>{if(epoch===this.epoch)this.start(book,partId,position,source);});return;}
   if(this.session?.source===source&&this.session?.book.id===book.id&&!this.session.blocked&&this.session.book.revision>book.revision)book=this.session.book;
   partId??=book.partId;position??=book.position;
@@ -30,7 +31,7 @@ export class BookController {
  }
  stop(){if(this.state.book){void this.flush();this.attached=false;this.audio?.pause();this.patch({book:null,playing:false,ready:false,sleepUntil:null,endChapter:false});}this.epoch++;this.wantsPlay=false;}
  attach(audio:HTMLAudioElement){
-  this.audio=audio;this.attached=true;this.patch({volume:audio.volume,muted:audio.muted});const b=this.state.book;if(!b)return()=>{};
+  this.audio=audio;this.attached=true;this.mediaFailed=false;this.patch({volume:audio.volume,muted:audio.muted});const b=this.state.book;if(!b)return()=>{};
   const position=this.state.position;let loaded=false;
   const metadata=()=>{if(loaded||!this.attached)return;loaded=true;audio.playbackRate=this.state.book?.speed??1;audio.preservesPitch=true;
    if(position>0)audio.currentTime=Math.min(position,Number.isFinite(audio.duration)?audio.duration:position);
@@ -48,7 +49,7 @@ export class BookController {
    if(i+1<book.parts.length)this.seek(book.parts[i+1]!.id,0,true);
    else{this.wantsPlay=false;this.patch({playing:false});void this.mutate('status',{status:'finished'}).catch(()=>{});}
   };
-  const error=()=>{if(this.attached){this.wantsPlay=false;this.patch({playing:false,error:'This part could not play. Check your connection or use a browser that supports its original audio format. Your saved position is retained.'});}};
+  const error=()=>{if(this.attached){this.wantsPlay=false;this.mediaFailed=true;this.patch({playing:false,ready:false,error:'This part could not play. Tap Play to retry. Your saved position is retained.'});}};
   const events:{[key:string]:()=>void}={loadedmetadata:metadata,timeupdate:time,play,pause,ended,error};
   for(const [event,handler]of Object.entries(events))audio.addEventListener(event,handler);
   let cancelled=false,release:(()=>void)|undefined;
@@ -56,7 +57,7 @@ export class BookController {
   try{const media=this.source(this.state.partId,b,this.state.source);if(media instanceof Promise)void media.then(assign).catch(()=>{if(!cancelled)error();});else assign(media);}catch{error();}
   return()=>{cancelled=true;release?.();this.attached=false;for(const [event,handler]of Object.entries(events))audio.removeEventListener(event,handler);audio.pause();audio.removeAttribute('src');audio.load();};
  }
- play(){if(!this.state.book||(!this.online&&this.state.source==='stream')||this.blocked)return;const b=this.state.book,i=b.parts.findIndex(p=>p.id===this.state.partId),part=b.parts[i];if(part?.duration&&this.state.position>=part.duration){if(i+1<b.parts.length)this.seek(b.parts[i+1]!.id,0,true);return;}if(this.checkSleep())return;this.patch({error:''});this.wantsPlay=true;if(this.state.ready)void this.audio?.play().catch(()=>this.patch({error:'Tap Play to start the audiobook.'}));}
+ play(){if(!this.state.book||(!this.online&&this.state.source==='stream')||this.blocked)return;const b=this.state.book,i=b.parts.findIndex(p=>p.id===this.state.partId),part=b.parts[i];if(part?.duration&&this.state.position>=part.duration){if(i+1<b.parts.length)this.seek(b.parts[i+1]!.id,0,true);return;}if(this.checkSleep())return;this.patch({error:''});this.wantsPlay=true;if(this.audio)resumeSpectrum(this.audio);if(this.mediaFailed){this.mediaFailed=false;this.patch({ready:false,loadRevision:this.state.loadRevision+1});return;}if(this.state.ready)void this.audio?.play().catch(()=>this.patch({error:'Tap Play to start the audiobook.'}));}
  pause(){this.wantsPlay=false;this.audio?.pause();this.patch({playing:false});void this.flush();}
  volume(value:number){if(!Number.isFinite(value)||value<0||value>1)return;if(this.audio){this.audio.volume=value;this.audio.muted=false;}this.patch({volume:value,muted:false});}
  mute(){const muted=!this.state.muted;if(this.audio)this.audio.muted=muted;this.patch({muted});}

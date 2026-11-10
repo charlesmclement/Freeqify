@@ -1,7 +1,7 @@
 import {useBookDownloads} from './BookDownloadsContext.js';
 import {AudiobookContext} from './AudiobookContext.js';
-import {AudiobookControls} from './AudiobookControls.js';
-import {BookController,type BookSource} from './audiobook-player.js';
+import {AudiobookTransport,AudiobookProgress,AudiobookOptions,AudiobookChapters} from './AudiobookControls.js';
+import {BookController,chapterAt,type BookSource} from './audiobook-player.js';
 import {OfflineStore} from './offline-store.js';
 import {createPortal} from 'react-dom';
 import {PlaybackSurfaceContext} from './PlaybackSurface.js';
@@ -94,7 +94,10 @@ function Player({ children }: { children: ReactNode }) {
     const manager=bookDevice.current?.manager;if(!manager)throw new Error('Device storage unavailable.');const blob=await manager.store.blob(book.id,id),url=URL.createObjectURL(blob);return {url,release:()=>URL.revokeObjectURL(url)};
   }));
   const bookState=useSyncExternalStore(books.subscribe,books.snapshot,books.snapshot);
-  const bookActive=!!bookState.book;
+  const book=bookState.book,bookActive=!!book;
+  const mediaPlaying=bookActive?bookState.playing:playing;
+  const bookChapter=book?chapterAt(book,bookState.partId,bookState.position):undefined;
+  const nextChapter=book?.chapters[book.chapters.findIndex(c=>c.id===bookChapter?.id)+1];
   useEffect(()=>books.setOnline(!account.offline),[books,account.offline]);
   useEffect(()=>{books.setWriter(async(book,action,input,source)=>{
     const manager=bookDevice.current?.manager;if(source==='download'){if(!manager)throw new Error('Device storage unavailable.');return manager.write(book,action,input);}
@@ -108,7 +111,7 @@ function Player({ children }: { children: ReactNode }) {
   const nextTrack=nextItem?metadata[nextItem.trackId]:undefined;
   useEffect(()=>{
     if(!fullOpen)return;
-    const dialog=fullDialog.current!;
+    const dialog=fullDialog.current;if(!dialog)return;
     const modal=immersive||!mainSurface,overflow=document.body.style.overflow;
     if(modal)document.body.style.overflow='hidden';
     if(modal&&dialog.showModal)dialog.showModal();else dialog.setAttribute('open','');
@@ -117,8 +120,8 @@ function Player({ children }: { children: ReactNode }) {
   },[fullOpen,immersive,mainSurface]);
   // Activity only updates React when chrome visibility changes, never on animation frames.
   useEffect(()=>{
-    if(!fullOpen||!immersive||!playing||queueOpen)return;
-    const dialog=fullDialog.current!;let timer:ReturnType<typeof setTimeout>;
+    if(!fullOpen||!immersive||!mediaPlaying||queueOpen)return;
+    const dialog=fullDialog.current;if(!dialog)return;let timer:ReturnType<typeof setTimeout>;
     const schedule=()=>{clearTimeout(timer);timer=setTimeout(()=>{
       if(dialog.querySelector('details[open]')||dialog.querySelector('button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible')){schedule();return;}
       setChromeIdle(true);
@@ -127,7 +130,7 @@ function Player({ children }: { children: ReactNode }) {
     for(const event of ['pointermove','pointerdown','keydown','focusin'])dialog.addEventListener(event,reveal);
     schedule();
     return()=>{clearTimeout(timer);for(const event of ['pointermove','pointerdown','keydown','focusin'])dialog.removeEventListener(event,reveal);};
-  },[fullOpen,immersive,playing,queueOpen]);
+  },[fullOpen,immersive,mediaPlaying,queueOpen]);
   function toggleImmersive(){setChromeIdle(false);setQueueOpen(false);setImmersive(value=>!value);}
   function update(next: PlaybackState) {
     const previous=latest.current;
@@ -227,7 +230,7 @@ function Player({ children }: { children: ReactNode }) {
     return () => { stopped=true;progressiveSong.dispose();if(progressive.current===progressiveSong)progressive.current=null;element.pause();element.removeAttribute('src');element.load(); };
     // Source identity is independent of progress, navigation, and metadata updates.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookActive?null:currentKey, bookActive?null:format,bookActive?0:bufferRevision,bookActive,bookState.book?.id,bookState.partId,bookState.source]);
+  }, [bookActive?null:currentKey, bookActive?null:format,bookActive?0:bufferRevision,bookActive,bookState.book?.id,bookState.partId,bookState.source,bookState.loadRevision]);
   // Session recovery must not reload a ready or currently playing source.
   const wasOffline=useRef(account.offline);
   useEffect(()=>{
@@ -320,23 +323,22 @@ function Player({ children }: { children: ReactNode }) {
   function closeNowPlaying(){setQueueOpen(false);setFullOpen(false);setImmersive(false);setChromeIdle(false);queueMicrotask(()=>document.querySelector<HTMLButtonElement>('.mini-player-open')?.focus({preventScroll:true}));}
   function collapseQueue(){setQueueOpen(false);queueMicrotask(()=>{const target=fullOpen?fullDialog.current?.querySelector<HTMLButtonElement>('.listening-header-actions button[aria-expanded]'):document.querySelector<HTMLButtonElement>('.music-player>.player-queue-toggle');target?.focus({preventScroll:true});});}
   const audioSource=current?buffers.source(bufferKey):undefined;
-  const sourceIndicator=()=>audioSource?<small className="playback-source" data-source={audioSource} title={audioSource==='device'?'Playing the completed downloaded file on this device.':'Audio supplied by the server, including its temporary playback buffer.'}>{audioSource==='device'?'↓ Device storage':'↗ Server stream'}</small>:null;
+  const sourceIndicator=()=>book?<small className="playback-source" data-source={bookState.source==='download'?'device':'server'}>{bookState.source==='download'?'↓ Device storage':'↗ Server stream'}</small>:audioSource?<small className="playback-source" data-source={audioSource} title={audioSource==='device'?'Playing the completed downloaded file on this device.':'Audio supplied by the server, including its temporary playback buffer.'}>{audioSource==='device'?'↓ Device storage':'↗ Server stream'}</small>:null;
   const dockAvailable=!fullOpen||Boolean(mainSurface&&!immersive);
-  const queueContents=()=><QueueTray showEarlier={showEarlier} toggleEarlier={()=>setShowEarlier(value=>!value)} historyKeys={earlierKeys} state={state} metadata={metadata} keys={visibleKeys} ready={ready} close={collapseQueue} select={select} remove={key=>{selectedByUser.current=true;update(removeQueued(latest.current,key));}} move={(key,target)=>{const before=latest.current,next=moveQueued(before,key,target);if(next===before)return false;selectedByUser.current=true;update(next);return true;}} clear={()=>{selectedByUser.current=true;update(clearManual(latest.current));}} offset={pageOffset} pageSize={PERSONAL_PAGE_SIZE} onPage={setQueueOffset}/>;
-  const transport=()=>(<div className="player-controls"><button aria-label="Shuffle" aria-pressed={state.shuffle} onClick={() => update(shuffleQueue(latest.current))}><Icon name="shuffle"/></button><button aria-label="Previous track" onClick={() => { if ((audio.current?.currentTime ?? 0) > 3) {history.reset();audio.current!.currentTime = 0;} else move(-1); }}><span className="previous-icon"><Icon name="next"/></span></button><button className="player-play" aria-label={playing || bufferWantsPlay ? 'Pause' : 'Play'} disabled={!current} onClick={() => playing || bufferWantsPlay ? pause() : resume()}><Icon name={playing || bufferWantsPlay?'pause':'play'}/></button><button aria-label="Next track" onClick={() => move(1)}><Icon name="next"/></button><button aria-label={`Repeat ${state.repeat}`} onClick={() => update({ ...latest.current, repeat: state.repeat === 'off' ? 'all' : state.repeat === 'all' ? 'one' : 'off' })}><Icon name="repeat"/><span className="repeat-mode">{state.repeat}</span></button></div>);
-  const progress=()=>(<div className="player-progress"><span>{duration(state.position)}</span><input aria-label="Seek" type="range" min="0" max={length || 1} step="0.1" value={Math.min(state.position, length || 0)} disabled={!seekable || !length} onChange={event => { const a = audio.current; if (a && seekable) { a.currentTime = Number(event.target.value); update({ ...latest.current, position: a.currentTime }); } }} /><span>{duration(length)} / −{duration(Math.max(0, length - state.position))}</span></div>);
+  const queueContents=()=>book?<AudiobookChapters key={book.id} close={collapseQueue}/>:<QueueTray showEarlier={showEarlier} toggleEarlier={()=>setShowEarlier(value=>!value)} historyKeys={earlierKeys} state={state} metadata={metadata} keys={visibleKeys} ready={ready} close={collapseQueue} select={select} remove={key=>{selectedByUser.current=true;update(removeQueued(latest.current,key));}} move={(key,target)=>{const before=latest.current,next=moveQueued(before,key,target);if(next===before)return false;selectedByUser.current=true;update(next);return true;}} clear={()=>{selectedByUser.current=true;update(clearManual(latest.current));}} offset={pageOffset} pageSize={PERSONAL_PAGE_SIZE} onPage={setQueueOffset}/>;
+  const transport=()=>book?<AudiobookTransport/>:(<div className="player-controls"><button aria-label="Shuffle" aria-pressed={state.shuffle} onClick={() => update(shuffleQueue(latest.current))}><Icon name="shuffle"/></button><button aria-label="Previous track" onClick={() => { if ((audio.current?.currentTime ?? 0) > 3) {history.reset();audio.current!.currentTime = 0;} else move(-1); }}><span className="previous-icon"><Icon name="next"/></span></button><button className="player-play" aria-label={playing || bufferWantsPlay ? 'Pause' : 'Play'} disabled={!current} onClick={() => playing || bufferWantsPlay ? pause() : resume()}><Icon name={playing || bufferWantsPlay?'pause':'play'}/></button><button aria-label="Next track" onClick={() => move(1)}><Icon name="next"/></button><button aria-label={`Repeat ${state.repeat}`} onClick={() => update({ ...latest.current, repeat: state.repeat === 'off' ? 'all' : state.repeat === 'all' ? 'one' : 'off' })}><Icon name="repeat"/><span className="repeat-mode">{state.repeat}</span></button></div>);
+  const progress=()=>book?<AudiobookProgress/>:(<div className="player-progress"><span>{duration(state.position)}</span><input aria-label="Seek" type="range" min="0" max={length || 1} step="0.1" value={Math.min(state.position, length || 0)} disabled={!seekable || !length} onChange={event => { const a = audio.current; if (a && seekable) { a.currentTime = Number(event.target.value); update({ ...latest.current, position: a.currentTime }); } }} /><span>{duration(length)} / −{duration(Math.max(0, length - state.position))}</span></div>);
   function startBook(book:Audiobook,partId?:string,position?:number,source:BookSource='stream'){
     if((account.offline&&source==='stream')||!ready)return;
-    selectedByUser.current=true;pause();restorePosition.current=latest.current.position;void persist();history.reset();setFullOpen(false);setQueueOpen(false);buffers.clear();books.start(book,partId,position,source);
+    selectedByUser.current=true;if(audio.current)resumeSpectrum(audio.current);pause();restorePosition.current=latest.current.position;void persist();history.reset();setQueueOpen(false);setQueueOffset(0);buffers.clear();books.start(book,partId,position,source);
   }
   function closeBook(){books.stop();wantsPlay.current=false;restorePosition.current=latest.current.position;}
   return <Context value={actions}><AudiobookContext value={{state:bookState,controller:books,start:startBook,close:closeBook}}><PlaybackSurfaceContext value={mountSurface}>{children}</PlaybackSurfaceContext><audio ref={audio} preload="metadata" onPlay={() => {if(bookActive)return;setPlaying(true);setChromeIdle(false);}} onPause={() => {if(bookActive)return;setPlaying(false);setChromeIdle(false);history.sample(audio.current?.currentTime??0,false);}} onEnded={() => {if(bookActive)return;history.reset();move(1, true);}} onError={()=>{if(!bookActive)failed();}}
     onDurationChange={() => { if(bookActive)return;const a=audio.current!;setLength(Number.isFinite(a.duration)?a.duration:track?.duration??0); }}
     onLoadedMetadata={() => { if(bookActive)return;const a = audio.current!; setLength(Number.isFinite(a.duration) ? a.duration : track?.duration ?? 0); if (restorePosition.current && a.seekable.length) { a.currentTime = Math.min(restorePosition.current, a.duration || restorePosition.current); restorePosition.current = 0; } }}
     onTimeUpdate={() => { if(bookActive)return;const a = audio.current!; if(Number.isFinite(a.duration)&&a.duration>0)setLength(a.duration);else if(track?.duration)setLength(track.duration); history.sample(a.currentTime,!a.paused&&!a.ended); if (Number.isFinite(a.currentTime)) update({ ...latest.current, position: a.currentTime }); setSeekable(a.seekable.length > 0); }} onProgress={() => {if(!bookActive)setSeekable(Boolean(audio.current?.seekable.length));}} />
-    <AudiobookControls/>
-    <section hidden={bookActive} className={`music-player ${current?'has-track':''} ${seekExpanded?'seek-expanded':''} ${queueOpen&&dockAvailable?'queue-expanded':''}`} aria-label="Music player" aria-hidden={fullOpen&&(immersive||!mainSurface)?true:undefined} onPointerDown={event=>{
-      if(event.pointerType==='mouse'||!event.isPrimary||(event.target as HTMLElement).closest('input,select,textarea,.queue-scroll,.song-action-menu'))return;
+    <section className={`music-player ${bookActive?'is-audiobook':''} ${current||bookActive?'has-track':''} ${seekExpanded?'seek-expanded':''} ${queueOpen&&dockAvailable?'queue-expanded':''}`} aria-label={bookActive?'Audiobook player':'Music player'} aria-hidden={fullOpen&&(immersive||!mainSurface)?true:undefined} onPointerDown={event=>{
+      if(event.pointerType==='mouse'||!event.isPrimary||(event.target as HTMLElement).closest('input,select,textarea,.queue-scroll,.book-player-tray,.song-action-menu'))return;
       swipe.current={id:event.pointerId,x:event.clientX,y:event.clientY};
     }} onPointerMove={event=>{const start=swipe.current;if(start?.id===event.pointerId&&Math.abs(event.clientY-start.y)>16)event.currentTarget.setPointerCapture?.(event.pointerId);}} onPointerUp={event=>{
       const start=swipe.current;swipe.current=null;if(!start||start.id!==event.pointerId)return;
@@ -345,41 +347,43 @@ function Player({ children }: { children: ReactNode }) {
       if(event.currentTarget.hasPointerCapture?.(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);
     }} onPointerCancel={()=>{swipe.current=null;}} onClickCapture={event=>{if(event.detail!==0&&Date.now()<suppressTrayClick.current){event.preventDefault();event.stopPropagation();}}} onKeyDown={event=>{if(event.key==='Escape'&&queueOpen){event.preventDefault();event.stopPropagation();collapseQueue();}}}>
       <button className="tray-swipe-handle" aria-label={queueOpen?'Lower bottom tray':'Expand bottom tray'} aria-expanded={queueOpen} onClick={()=>setQueueOpen(!queueOpen)}><span/></button>
-      <div className="player-track"><button className="mini-player-open" aria-label="Open Now Playing" disabled={!current} onClick={()=>{setHasOpened(true);setFullOpen(true);}}><PlayerArtwork key={track?.albumId ?? track?.artworkId ?? 'none'} id={track?.artworkId ?? null} albumId={track?.albumId ?? null} /><span><strong><ScrollingTitle text={track?.title ?? (current ? 'Loading track…' : 'Find your frequency')}/></strong><small>{track ? `${track.artist} · ${track.album}` : 'Choose a song from your library'}</small>{sourceIndicator()}</span></button></div>
+      <div className="player-track"><button className="mini-player-open" aria-label="Open Now Playing" disabled={!current&&!bookActive} onClick={()=>{setHasOpened(true);setFullOpen(true);}}>{book?<AlbumArtwork kind="book" albumId={book.albumId} artworkId={book.artworkId} label={book.title} player/>:<PlayerArtwork key={track?.albumId ?? track?.artworkId ?? 'none'} id={track?.artworkId ?? null} albumId={track?.albumId ?? null} />}<span><strong><ScrollingTitle text={book?.title??track?.title ?? (current ? 'Loading track…' : 'Find your frequency')}/></strong><small>{book?`${book.author} · ${bookChapter?.title??book.parts.find(p=>p.id===bookState.partId)?.title??''}`:track ? `${track.artist} · ${track.album}` : 'Choose a song from your library'}</small>{sourceIndicator()}</span></button></div>
       {transport()}
-      <button className="player-queue-toggle" aria-label={queueOpen?'Hide playback queue':'Show playback queue'} aria-expanded={queueOpen} aria-controls="dock-queue" title="Playback queue" onClick={()=>setQueueOpen(!queueOpen)}><Icon name="queue"/></button>
+      <button className="player-queue-toggle" aria-label={bookActive?(queueOpen?'Hide book chapters':'Show book chapters'):(queueOpen?'Hide playback queue':'Show playback queue')} aria-expanded={queueOpen} aria-controls="dock-queue" title={bookActive?'Book chapters and options':'Playback queue'} onClick={()=>setQueueOpen(!queueOpen)}><Icon name={bookActive?'book':'queue'}/></button>
       <button className="player-seek-toggle" aria-label={seekExpanded?'Hide seek bar':'Show seek bar'} title={seekExpanded?'Hide seek bar':'Show seek bar'} aria-expanded={seekExpanded} aria-controls="mini-player-seek" onClick={()=>setSeekExpanded(value=>!value)}><Icon name="chevron"/></button>
       <div id="mini-player-seek" className="mini-player-seek">{progress()}</div>
-      <div id="dock-queue" className={`player-queue queue-slide ${queueOpen&&dockAvailable?'is-open':''}`} aria-label="Playback queue" aria-hidden={!queueOpen||!dockAvailable} inert={!queueOpen||!dockAvailable}><div className="queue-reveal">{dockAvailable&&queueContents()}</div></div>
-      <div className="player-options"><button aria-label={state.muted ? 'Unmute' : 'Mute'} onClick={() => update({ ...latest.current, muted: !state.muted })}>{state.muted ? 'Unmute' : 'Mute'}</button><input aria-label="Volume" type="range" min="0" max="1" step="0.01" value={state.volume} onChange={event => update({ ...latest.current, volume: Number(event.target.value), muted: false })} />{track && <TrackActions track={track}/>} {current && format === 'raw' && <button onClick={() => { restorePosition.current = state.position; setFormat('mp3'); }}>MP3 compatibility</button>}</div>
-      {history.error && <p className="player-message">{history.error}</p>}
-      {bufferStatus&&<p className="player-message" role="status">{bufferStatus}</p>}
-      {message && <p className="player-message" role="status">{message}</p>}
-      {current && !seekable && <small className="player-message">Seeking becomes available when the stream supports it.</small>}
+      <div id="dock-queue" className={`player-queue queue-slide ${queueOpen&&dockAvailable?'is-open':''}`} aria-label={bookActive?'Book chapters and options':'Playback queue'} aria-hidden={!queueOpen||!dockAvailable} inert={!queueOpen||!dockAvailable}><div className="queue-reveal">{dockAvailable&&queueContents()}</div></div>
+      {!bookActive&&<div className="player-options"><button aria-label={state.muted ? 'Unmute' : 'Mute'} onClick={() => update({ ...latest.current, muted: !state.muted })}>{state.muted ? 'Unmute' : 'Mute'}</button><input aria-label="Volume" type="range" min="0" max="1" step="0.01" value={state.volume} onChange={event => update({ ...latest.current, volume: Number(event.target.value), muted: false })} />{track && <TrackActions track={track}/>} {current && format === 'raw' && <button onClick={() => { restorePosition.current = state.position; setFormat('mp3'); }}>MP3 compatibility</button>}</div>}
+      {bookActive&&bookState.error&&<p className="player-message" role="alert">{bookState.error}</p>}
+      {!bookActive&&history.error && <p className="player-message">{history.error}</p>}
+      {!bookActive&&bufferStatus&&<p className="player-message" role="status">{bufferStatus}</p>}
+      {!bookActive&&message && <p className="player-message" role="status">{message}</p>}
+      {!bookActive&&current && !seekable && <small className="player-message">Seeking becomes available when the stream supports it.</small>}
 
     </section>
     {!bookActive&&mainSurface&&homeSurface&&!fullOpen&&createPortal(<div className="home-visualizer"><MusicVisualizer audio={audio} active={ready} playing={playing} user={userId} expanded={false} onExpand={()=>{setHasOpened(true);setFullOpen(true);}}/></div>,mainSurface)}
-    {!bookActive&&(hasOpened||fullOpen)&&createPortal(<dialog ref={fullDialog} className={`player-fullscreen listening-room ${immersive?'player-immersive':''} ${chromeIdle&&immersive&&playing?'player-chrome-idle':''}`} aria-labelledby="now-playing-title" aria-modal={immersive||!mainSurface?true:false} onCancel={event=>{event.preventDefault();if(queueOpen)setQueueOpen(false);else if(immersive)toggleImmersive();else closeNowPlaying();}} onKeyDown={event=>{
+    {(hasOpened||fullOpen)&&createPortal(<dialog ref={fullDialog} className={`player-fullscreen listening-room ${immersive?'player-immersive':''} ${chromeIdle&&immersive&&mediaPlaying?'player-chrome-idle':''}`} aria-labelledby="now-playing-title" aria-modal={immersive||!mainSurface?true:false} onCancel={event=>{event.preventDefault();if(queueOpen)setQueueOpen(false);else if(immersive)toggleImmersive();else closeNowPlaying();}} onKeyDown={event=>{
       if(event.key==='Escape'&&queueOpen){event.preventDefault();event.stopPropagation();collapseQueue();return;}
       if(event.key==='Escape'&&immersive&&!event.defaultPrevented){event.preventDefault();event.stopPropagation();toggleImmersive();return;}
       if(event.key==='Escape'&&!event.defaultPrevented){event.preventDefault();event.stopPropagation();closeNowPlaying();return;}
       if(event.defaultPrevented||event.altKey||event.ctrlKey||event.metaKey||(event.target as HTMLElement).closest('input,select,textarea,[contenteditable]'))return;
       if((event.target as HTMLElement).closest('button,summary')&&event.key.toLowerCase()!=='f')return;
-      if(event.key===' '){event.preventDefault();if(audio.current?.paused)resume();else pause();}
+      if(event.key===' '){event.preventDefault();if(bookActive)books.toggle();else if(audio.current?.paused)resume();else pause();}
       if(event.key.toLowerCase()==='f'){event.preventDefault();toggleImmersive();}
-      if((event.key==='ArrowLeft'||event.key==='ArrowRight')&&seekable&&audio.current){event.preventDefault();audio.current.currentTime=Math.max(0,Math.min(length,audio.current.currentTime+(event.key==='ArrowRight'?5:-5)));}
+      if(event.key==='ArrowLeft'||event.key==='ArrowRight'){const seconds=event.key==='ArrowRight'?5:-5;if(bookActive){event.preventDefault();books.skip(seconds);}else if(seekable&&audio.current){event.preventDefault();audio.current.currentTime=Math.max(0,Math.min(length,audio.current.currentTime+seconds));}}
     }}>
-      <div className="now-playing-header"><button aria-label="Close Now Playing" onClick={closeNowPlaying}><Icon name="back"/></button><span><span className="brand-mark">≋</span> Freeqify<span className="brand-dot">.</span><small>THE LISTENING ROOM</small></span><div className="listening-header-actions"><button className="immersive-toggle" aria-pressed={immersive} onClick={toggleImmersive}>{immersive?'Exit immersive view':'Immersive view'} <span aria-hidden="true">{immersive?'↙':'↗'}</span></button><button aria-label="Show playback queue" aria-expanded={queueOpen} onClick={()=>{setChromeIdle(false);setQueueOpen(!queueOpen);}}><Icon name="queue"/></button></div></div>
+      <div className="now-playing-header"><button aria-label="Close Now Playing" onClick={closeNowPlaying}><Icon name="back"/></button><span><span className="brand-mark">≋</span> Freeqify<span className="brand-dot">.</span><small>THE LISTENING ROOM</small></span><div className="listening-header-actions"><button className="immersive-toggle" aria-pressed={immersive} onClick={toggleImmersive}>{immersive?'Exit immersive view':'Immersive view'} <span aria-hidden="true">{immersive?'↙':'↗'}</span></button><button aria-label={bookActive?'Show book chapters':'Show playback queue'} aria-expanded={queueOpen} onClick={()=>{setChromeIdle(false);setQueueOpen(!queueOpen);}}><Icon name={bookActive?'book':'queue'}/></button></div></div>
       <div className="now-playing-label"><span className="eyebrow">ON YOUR FREQUENCY</span><h2 id="now-playing-title">Now Playing</h2></div>
-      {fullOpen&&<MusicVisualizer audio={audio} active={fullOpen} playing={playing} user={account.state!.user!.id} expanded={immersive} onExpand={toggleImmersive}/>}
+      {fullOpen&&<MusicVisualizer audio={audio} active={fullOpen} playing={mediaPlaying} user={account.state!.user!.id} expanded={immersive} onExpand={toggleImmersive}/>}
       <div className="now-playing-companion">
-      <div className="now-playing-art"><AlbumArtwork albumId={track?.albumId??null} artworkId={track?.artworkId??null} label={track?.album??'Album'}/></div>
-      <div className="now-playing-track"><div><h3>{track?.title??'Loading track…'}</h3><p>{track?.artist??'Loading artist…'}</p><small>{track?.album}</small>{sourceIndicator()}</div>{track&&<TrackActions track={track}/>}</div>
+      <div className="now-playing-art"><AlbumArtwork kind={bookActive?'book':'album'} albumId={book?.albumId??track?.albumId??null} artworkId={book?book.artworkId:track?.artworkId??null} label={book?.title??track?.album??'Album'}/></div>
+      <div className="now-playing-track"><div><h3>{book?.title??track?.title??'Loading track…'}</h3><p>{book?.author??track?.artist??'Loading artist…'}</p><small>{book?bookChapter?.title:track?.album}</small>{sourceIndicator()}</div>{!bookActive&&track&&<TrackActions track={track}/>}</div>
       {(!mainSurface||immersive)&&<div className="now-playing-transport">{progress()}{transport()}</div>}
-      <button className="up-next" disabled={!nextItem} onClick={()=>move(1)}><span className="up-next-icon"><Icon name="queue"/></span><span><small>Up Next</small><strong>{nextItem?nextTrack?.title??'Loading next track…':'End of queue'}</strong>{nextTrack&&<small>{nextTrack.artist}</small>}</span><Icon name="next"/></button>
-      <details className="full-player-options"><summary>Playback options</summary><label>Volume<input aria-label="Now Playing volume" type="range" min="0" max="1" step="0.01" value={state.volume} onChange={event=>update({...latest.current,volume:Number(event.target.value),muted:false})}/></label><button onClick={()=>update({...latest.current,muted:!state.muted})}>{state.muted?'Unmute':'Mute'}</button>{current&&format==='raw'&&<button onClick={()=>{restorePosition.current=state.position;setFormat('mp3');}}>MP3 compatibility</button>}<p>Playback starts with a safety buffer while the rest downloads. Unprepared songs may use MP3 compatibility; prepared songs keep their original audio. The next song prepares automatically in temporary memory.</p>{current&&<button onClick={()=>{restorePosition.current=latest.current.position;setBufferRevision(n=>n+1);}}>Retry song</button>}<p>Lyrics are not available for this library.</p></details>
-      {bufferStatus&&<p className="player-message" role="status">{bufferStatus}</p>}{message&&<p className="player-message" role="status">{message}</p>}{history.error&&<p className="player-message">{history.error}</p>}
-      <div className={`full-queue queue-slide ${queueOpen&&!dockAvailable?'is-open':''}`} aria-label="Up Next queue" aria-hidden={!queueOpen||dockAvailable} inert={!queueOpen||dockAvailable}>{queueOpen&&!dockAvailable&&queueContents()}</div>
+      {book?<button className="up-next" disabled={!nextChapter} onClick={()=>{if(nextChapter)books.go(nextChapter);}}><span className="up-next-icon"><Icon name="book"/></span><span><small>Next chapter</small><strong>{nextChapter?.title??'End of book'}</strong></span><Icon name="next"/></button>:<button className="up-next" disabled={!nextItem} onClick={()=>move(1)}><span className="up-next-icon"><Icon name="queue"/></span><span><small>Up Next</small><strong>{nextItem?nextTrack?.title??'Loading next track…':'End of queue'}</strong>{nextTrack&&<small>{nextTrack.artist}</small>}</span><Icon name="next"/></button>}
+      {book?<details className="full-player-options"><summary>Book options</summary><AudiobookOptions/></details>:<details className="full-player-options"><summary>Playback options</summary><label>Volume<input aria-label="Now Playing volume" type="range" min="0" max="1" step="0.01" value={state.volume} onChange={event=>update({...latest.current,volume:Number(event.target.value),muted:false})}/></label><button onClick={()=>update({...latest.current,muted:!state.muted})}>{state.muted?'Unmute':'Mute'}</button>{current&&format==='raw'&&<button onClick={()=>{restorePosition.current=state.position;setFormat('mp3');}}>MP3 compatibility</button>}<p>Playback starts with a safety buffer while the rest downloads. Unprepared songs may use MP3 compatibility; prepared songs keep their original audio. The next song prepares automatically in temporary memory.</p>{current&&<button onClick={()=>{restorePosition.current=latest.current.position;setBufferRevision(n=>n+1);}}>Retry song</button>}<p>Lyrics are not available for this library.</p></details>}
+      {!bookActive&&bufferStatus&&<p className="player-message" role="status">{bufferStatus}</p>}{!bookActive&&message&&<p className="player-message" role="status">{message}</p>}{!bookActive&&history.error&&<p className="player-message">{history.error}</p>}
+      {bookActive&&bookState.error&&<p className="player-message" role="alert">{bookState.error}</p>}
+      <div className={`full-queue queue-slide ${queueOpen&&!dockAvailable?'is-open':''}`} aria-label={bookActive?'Book chapters':'Up Next queue'} aria-hidden={!queueOpen||dockAvailable} inert={!queueOpen||dockAvailable}>{queueOpen&&!dockAvailable&&queueContents()}</div>
       </div>
       <p className="listening-shortcuts">F · immersive &nbsp; / &nbsp; Space · play or pause &nbsp; / &nbsp; ← → · seek &nbsp; / &nbsp; Esc · return</p>
     </dialog>,mainSurface??document.body)}

@@ -108,3 +108,8 @@ Temporary connection failures automatically retry session verification every fiv
 
 Audiobooks also support optional Open Library covers and a persistent bottom player
 with cover, author, title and chapter. See [audiobook configuration](docs/audiobooks.md).
+
+Audiobooks now use the same bottom Now Playing bar and expanded listening view as music.
+Tap the book title to open Now Playing. The book button opens chapters and options
+for speed, sleep, bookmarks, volume and returning to the saved music queue. Opening
+or closing either view preserves the current audio source and listening position.
